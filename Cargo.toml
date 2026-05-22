@@ -20,7 +20,7 @@ serde = ["dep:serde", "dep:serde_with", "arrayvec/serde", "bitflags/serde", "con
 arrayvec = "0.7"
 bitflags = "2"
 contract-bridge = "0.1"
-ddss-sys = "0.1.1-dev"
+ddss-sys = "0.1"
 parking_lot = "0.12"
 semver = "1"
 serde = { version = "1", features = ["derive"], optional = true }
@@ -32,7 +32,3 @@ anyhow = "1"
 
 [profile.dev]
 opt-level = 2
-
-[patch.crates-io]
-contract-bridge = { path = "../contract-bridge" }
-ddss-sys = { path = "../ddss-sys" }
