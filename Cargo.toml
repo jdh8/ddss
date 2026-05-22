@@ -1,0 +1,38 @@
+[package]
+name = "ddss"
+version = "0.1.0"
+authors = ["Chen-Pang He (https://jdh8.org)"]
+edition = "2024"
+rust-version = "1.93"
+description = "Rusty API for ddss, a performance-oriented fork of the DDS double dummy solver for bridge"
+repository = "https://github.com/jdh8/ddss"
+homepage = "https://github.com/jdh8/ddss"
+documentation = "https://docs.rs/ddss"
+readme = "README.md"
+license = "Apache-2.0"
+categories = ["game-development"]
+keywords = ["bridge", "double-dummy"]
+
+[features]
+serde = ["dep:serde", "dep:serde_with", "arrayvec/serde", "bitflags/serde", "contract-bridge/serde", "semver/serde"]
+
+[dependencies]
+arrayvec = "0.7"
+bitflags = "2"
+contract-bridge = "0.1"
+ddss-sys = "0.1.1-dev"
+parking_lot = "0.12"
+semver = "1"
+serde = { version = "1", features = ["derive"], optional = true }
+serde_with = { version = "3", default-features = false, features = ["macros"], optional = true }
+thiserror = "2"
+
+[dev-dependencies]
+anyhow = "1"
+
+[profile.dev]
+opt-level = 2
+
+[patch.crates-io]
+contract-bridge = { path = "../contract-bridge" }
+ddss-sys = { path = "../ddss-sys" }
