@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.1.2] - 2026-05-24
 
 ### Added
 
@@ -8,8 +8,6 @@
   deals (per-seat, right-sided per pair, and per-deal max). Migrated
   from `pons`, where the only pons-side dependency was `rand` and the
   ddss solver itself.
-
-## [0.1.2] - 2026-05-24
 
 ### Fixed
 
