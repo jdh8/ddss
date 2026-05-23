@@ -340,6 +340,7 @@ fn batch_solvers_fit_on_one_megabyte_stack() {
                 board,
                 target: Target::Any(None),
             }]);
+            core::mem::drop(solver);
             Ok(())
         })
         .expect("spawn worker thread")
