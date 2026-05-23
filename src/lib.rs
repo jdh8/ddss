@@ -224,7 +224,13 @@ impl Solver {
         );
         #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
         let deal_count = deals.len() as c_int;
-        let mut pack: Box<sys::ddTableDeals> = Box::default();
+        // SAFETY for `pack`, `res`, and `pars`: ddss-sys's bindgen-generated
+        // `Default` impls for these FFI packs are `write_bytes(_, 0, 1)`; all
+        // fields are `c_int`/`c_uint`/`c_char` and arrays thereof, so the
+        // all-zero bit pattern is a valid value. Boxing through `Box::default()`
+        // would materialize a stack temporary (~1 MB across the three packs) at
+        // opt-level 0, overflowing Windows' default thread stack.
+        let mut pack: Box<sys::ddTableDeals> = unsafe { Box::new_zeroed().assume_init() };
         pack.noOfTables = deal_count;
 
         for (i, &deal) in deals.iter().enumerate() {
@@ -238,8 +244,8 @@ impl Solver {
             c_int::from(!flags.contains(StrainFlags::CLUBS)),
             c_int::from(!flags.contains(StrainFlags::NOTRUMP)),
         ];
-        let mut res: Box<sys::ddTablesRes> = Box::default();
-        let mut pars: Box<sys::allParResults> = Box::default();
+        let mut res: Box<sys::ddTablesRes> = unsafe { Box::new_zeroed().assume_init() };
+        let mut pars: Box<sys::allParResults> = unsafe { Box::new_zeroed().assume_init() };
         // SAFETY: all pointers are valid for the duration of the call;
         // caller upholds the thread-exclusion invariant.
         let status = unsafe {
@@ -323,7 +329,13 @@ impl Solver {
         debug_assert!(args.len() <= sys::MAXNOOFBOARDS as usize);
         #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
         let board_count = args.len() as c_int;
-        let mut pack: Box<sys::boards> = Box::default();
+        // SAFETY for `pack` and `res`: ddss-sys's bindgen-generated `Default`
+        // impls for these FFI packs are `write_bytes(_, 0, 1)`; all fields are
+        // `c_int`/`c_uint`/`c_char` and arrays thereof, so the all-zero bit
+        // pattern is a valid value. Boxing through `Box::default()` would
+        // materialize a stack temporary (~1.6 MB across the two packs) at
+        // opt-level 0, overflowing Windows' default thread stack.
+        let mut pack: Box<sys::boards> = unsafe { Box::new_zeroed().assume_init() };
         pack.noOfBoards = board_count;
 
         for (i, obj) in args.iter().enumerate() {
@@ -331,7 +343,7 @@ impl Solver {
             pack.target[i] = obj.target.target();
             pack.solutions[i] = obj.target.solutions();
         }
-        let mut res: Box<sys::solvedBoards> = Box::default();
+        let mut res: Box<sys::solvedBoards> = unsafe { Box::new_zeroed().assume_init() };
         // SAFETY: caller upholds thread exclusion; pointers are valid.
         let status = unsafe { sys::SolveAllBoardsBin(&raw mut *pack, &raw mut *res) };
         check(status);

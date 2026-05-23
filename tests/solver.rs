@@ -309,6 +309,45 @@ fn solve_deals_batch_matches_sequential() -> Result<(), Builder> {
     Ok(())
 }
 
+/// `solve_deals` and `solve_boards` must not overflow Windows' 1 MB
+/// default thread stack. The batch entry points internally allocate
+/// multi-hundred-KB FFI packs; if any of them are constructed on the
+/// stack before being boxed, this test panics with a stack overflow.
+#[test]
+fn batch_solvers_fit_on_one_megabyte_stack() {
+    std::thread::Builder::new()
+        .stack_size(1 << 20)
+        .spawn(|| -> anyhow::Result<()> {
+            const A54: Holding = Holding::from_bits_truncate(0b100_0000_0011_0000);
+            const QJ32: Holding = Holding::from_bits_truncate(0b001_1000_0000_1100);
+            const K976: Holding = Holding::from_bits_truncate(0b010_0010_1100_0000);
+            const T8: Holding = Holding::from_bits_truncate(0b000_0101_0000_0000);
+            const DEAL: Builder = Builder::new()
+                .north(Hand::new(A54, QJ32, K976, T8))
+                .east(Hand::new(T8, A54, QJ32, K976))
+                .south(Hand::new(K976, T8, A54, QJ32))
+                .west(Hand::new(QJ32, K976, T8, A54));
+            let full = DEAL
+                .build_full()
+                .map_err(|_| anyhow::anyhow!("DEAL is not a full deal"))?;
+            let partial = DEAL
+                .build_partial()
+                .map_err(|_| anyhow::anyhow!("DEAL is not a valid partial deal"))?;
+            let board = Board::try_new(partial, CurrentTrick::new(Strain::Notrump, Seat::North))?;
+            let solver = Solver::lock();
+            let _ = solver.solve_deals(&[full], NonEmptyStrainFlags::ALL);
+            let _ = solver.solve_boards(&[Objective {
+                board,
+                target: Target::Any(None),
+            }]);
+            Ok(())
+        })
+        .expect("spawn worker thread")
+        .join()
+        .expect("worker thread did not overflow its stack")
+        .expect("worker thread succeeded");
+}
+
 /// `analyse_play` with an empty trace returns just the starting DD value.
 #[test]
 fn analyse_play_empty_trace_complements_solve_board() -> anyhow::Result<()> {
