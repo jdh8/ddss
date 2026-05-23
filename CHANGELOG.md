@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- `solve_deals_crosses_chunk_boundary` test in `tests/solver.rs`,
+  migrated from `pons` (where it exercised only ddss + contract-bridge
+  APIs). Runs `2 * MAXNOOFBOARDS / 5` random deals through
+  `Solver::solve_deals(.., NonEmptyStrainFlags::ALL)` and asserts equality
+  with sequential `solve_deal`, forcing the batch path to cross at least
+  one internal chunk boundary. Complements the existing 3-deal
+  `solve_deals_batch_matches_sequential`. Ignored under Miri (FFI).
+
 ## [0.1.2] - 2026-05-24
 
 ### Fixed
