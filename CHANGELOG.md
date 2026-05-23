@@ -11,6 +11,20 @@
   with sequential `solve_deal`, forcing the batch path to cross at least
   one internal chunk boundary. Complements the existing 3-deal
   `solve_deals_batch_matches_sequential`. Ignored under Miri (FFI).
+- `test-release` CI job that runs `cargo test --release` on
+  ubuntu+stable. Catches the converse of the 0.1.2 stack-temp bug
+  class: UB-in-unsafe miscompilations, inlining-exposed preconditions,
+  and aggressive-inlining stack growth that only surface at -O2/-O3.
+
+### Changed
+
+- `[profile.dev.package."*"]` set to `opt-level = 2`, so dependencies
+  (including ddss-sys's C++ DDS engine via `cc`) are optimized in dev
+  builds. ddss's own Rust stays at opt-level 0 so the
+  `batch_solvers_fit_on_one_megabyte_stack` canary still catches
+  stack-temp bugs in this crate's own code. Restores most of the test
+  speed lost in 0.1.2 without reintroducing the bug-masking behavior
+  of the old crate-wide `[profile.dev] opt-level = 2`.
 
 ## [0.1.2] - 2026-05-24
 

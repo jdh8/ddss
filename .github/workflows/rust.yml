@@ -55,3 +55,14 @@ jobs:
       run: rustup toolchain install ${{ matrix.rust }} --profile minimal && rustup default ${{ matrix.rust }}
     - name: Test
       run: cargo test --verbose
+
+  test-release:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        submodules: recursive
+    - name: Install Rust stable
+      run: rustup toolchain install stable --profile minimal && rustup default stable
+    - name: Test (release profile)
+      run: cargo test --release --verbose
