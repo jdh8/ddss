@@ -29,6 +29,8 @@ thiserror = "2"
 
 [dev-dependencies]
 anyhow = "1"
+contract-bridge = { version = "0.1", features = ["rand"] }
+rand = "0.10"
 
 [profile.dev]
 opt-level = 2
