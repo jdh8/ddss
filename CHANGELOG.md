@@ -2,13 +2,6 @@
 
 ## [0.1.2] - 2026-05-24
 
-### Added
-
-- `notrump-tricks` example: histogram of notrump tricks across random
-  deals (per-seat, right-sided per pair, and per-deal max). Migrated
-  from `pons`, where the only pons-side dependency was `rand` and the
-  ddss solver itself.
-
 ### Fixed
 
 - Round two of the 0.1.1 stack-overflow fix. `Box::<T>::default()` for
@@ -41,6 +34,10 @@
   explicit 1 MB stack — matching Windows' default — so the stack-temp
   bug class is caught on every CI run rather than waiting for a
   Windows-only failure downstream.
+- `notrump-tricks` example: histogram of notrump tricks across random
+  deals (per-seat, right-sided per pair, and per-deal max). Migrated
+  from `pons`, where the only pons-side dependency was `rand` and the
+  ddss solver itself.
 
 ## [0.1.1] - 2026-05-23
 
@@ -81,3 +78,4 @@ Initial release. High-level wrapper around [`ddss-sys`](https://crates.io/crates
 
 [0.1.0]: https://github.com/jdh8/ddss/releases/tag/0.1.0
 [0.1.1]: https://github.com/jdh8/ddss/releases/tag/0.1.1
+[0.1.2]: https://github.com/jdh8/ddss/releases/tag/0.1.2
