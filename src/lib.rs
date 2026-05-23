@@ -222,11 +222,11 @@ impl Solver {
         debug_assert!(
             deals.len() * flags.bits().count_ones() as usize <= sys::MAXNOOFBOARDS as usize
         );
-        let mut pack: Box<sys::ddTableDeals> = Box::new(sys::ddTableDeals {
-            #[allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation)]
-            noOfTables: deals.len() as c_int,
-            ..Default::default()
-        });
+        #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+        let deal_count = deals.len() as c_int;
+        let mut pack: Box<sys::ddTableDeals> = Box::default();
+        pack.noOfTables = deal_count;
+
         for (i, &deal) in deals.iter().enumerate() {
             pack.deals[i] = tricks::dd_table_deal_from(deal);
         }
@@ -321,11 +321,11 @@ impl Solver {
     /// 2. `args.len()` must not exceed [`sys::MAXNOOFBOARDS`].
     unsafe fn solve_board_segment(args: &[Objective]) -> Box<sys::solvedBoards> {
         debug_assert!(args.len() <= sys::MAXNOOFBOARDS as usize);
-        let mut pack: Box<sys::boards> = Box::new(sys::boards {
-            #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
-            noOfBoards: args.len() as c_int,
-            ..Default::default()
-        });
+        #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+        let board_count = args.len() as c_int;
+        let mut pack: Box<sys::boards> = Box::default();
+        pack.noOfBoards = board_count;
+
         for (i, obj) in args.iter().enumerate() {
             pack.deals[i] = sys::deal::from(obj.board.clone());
             pack.target[i] = obj.target.target();
