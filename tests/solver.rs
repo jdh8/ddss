@@ -164,6 +164,7 @@ fn solve_board_score_matches_dd_table() -> anyhow::Result<()> {
         .east(Hand::new(T8, A54, QJ32, K976))
         .south(Hand::new(K976, T8, A54, QJ32))
         .west(Hand::new(QJ32, K976, T8, A54));
+
     let solver = Solver::lock();
     let full = DEAL
         .build_full()
@@ -176,6 +177,8 @@ fn solve_board_score_matches_dd_table() -> anyhow::Result<()> {
         board: Board::try_new(partial, CurrentTrick::new(Strain::Notrump, Seat::North))?,
         target: Target::Any(None),
     });
+    core::mem::drop(solver);
+
     let expected = 13 - u8::from(tricks[Strain::Notrump].get(Seat::North.rho()));
     assert!(!found.plays.is_empty());
     assert_eq!(u8::from(found.plays[0].score), expected);
@@ -194,6 +197,7 @@ fn solve_boards_matches_solve_board() -> anyhow::Result<()> {
         .east(Hand::new(T8, A54, QJ32, K976))
         .south(Hand::new(K976, T8, A54, QJ32))
         .west(Hand::new(QJ32, K976, T8, A54));
+
     let solver = Solver::lock();
     let partial = DEAL
         .build_partial()
@@ -204,6 +208,8 @@ fn solve_boards_matches_solve_board() -> anyhow::Result<()> {
     };
     let single = solver.solve_board(&obj);
     let batch = solver.solve_boards(&[obj]);
+
+    core::mem::drop(solver);
     assert_eq!(batch.len(), 1);
     assert_eq!(batch[0].plays, single.plays);
     Ok(())
@@ -298,6 +304,7 @@ fn solve_deals_batch_matches_sequential() -> Result<(), Builder> {
     let solver = Solver::lock();
     let batch = solver.solve_deals(&deals, NonEmptyStrainFlags::ALL);
     let sequential: Vec<_> = deals.iter().map(|&d| solver.solve_deal(d)).collect();
+    core::mem::drop(solver);
     assert_eq!(batch, sequential);
     Ok(())
 }
@@ -318,6 +325,7 @@ fn analyse_play_empty_trace_complements_solve_board() -> anyhow::Result<()> {
         .build_partial()
         .map_err(|_| anyhow::anyhow!("DEAL is not a valid partial deal"))?;
     let board = Board::try_new(partial, CurrentTrick::new(Strain::Notrump, Seat::North))?;
+
     let solver = Solver::lock();
     let found = solver.solve_board(&Objective {
         board: board.clone(),
@@ -327,6 +335,8 @@ fn analyse_play_empty_trace_complements_solve_board() -> anyhow::Result<()> {
         board,
         cards: ArrayVec::new(),
     });
+
+    core::mem::drop(solver);
     assert_eq!(analysis.tricks.len(), 1);
     assert_eq!(
         u8::from(analysis.tricks[0]) + u8::from(found.plays[0].score),
