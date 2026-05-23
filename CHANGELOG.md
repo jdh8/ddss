@@ -9,6 +9,41 @@
   from `pons`, where the only pons-side dependency was `rand` and the
   ddss solver itself.
 
+## [0.1.2] - 2026-05-24
+
+### Fixed
+
+- Round two of the 0.1.1 stack-overflow fix. `Box::<T>::default()` for
+  the multi-hundred-KB FFI packs still routes through a stack temporary
+  in unoptimized downstream builds — the std impl boils down to
+  `Box::new_uninit() + write(T::default())`, and the `T::default()`
+  value lives in the caller's stack frame at opt-level 0. This
+  overflowed Windows' 1 MB default thread stack from consumers like
+  `pons`'s README doctest. The five `Box::default()` sites in
+  `Solver::solve_deal_segment` and `Solver::solve_board_segment` now
+  use `Box::new_zeroed().assume_init()`, which allocates the heap slot
+  first and zeroes it in place. ddss-sys's bindgen-generated `Default`
+  impls for these structs are already `write_bytes(_, 0, 1)`, so the
+  behavior is bit-identical.
+
+### Changed
+
+- Removed the `[profile.dev] opt-level = 2` override from `Cargo.toml`.
+  After the fix above it was no longer load-bearing for correctness, and
+  keeping it would have masked any future regressions of the same shape
+  in ddss's own test suite. Local `cargo test` execution is now
+  noticeably slower at opt-level 0 (about 3x for the solver tests), but
+  on a clean build the wall time is essentially unchanged (the C++ DDS
+  sources also compile faster without `-O2`).
+
+### Added
+
+- `batch_solvers_fit_on_one_megabyte_stack` regression test that
+  exercises `solve_deals` and `solve_boards` on a worker thread with an
+  explicit 1 MB stack — matching Windows' default — so the stack-temp
+  bug class is caught on every CI run rather than waiting for a
+  Windows-only failure downstream.
+
 ## [0.1.1] - 2026-05-23
 
 ### Fixed
