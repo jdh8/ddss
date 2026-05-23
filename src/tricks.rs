@@ -213,7 +213,7 @@ impl<T: AsRef<[Strain]>> fmt::UpperHex for TrickCountTableHex<T> {
 
 /// Convert a [`Strain`] to its index in [`ddss_sys`]
 #[must_use]
-pub(crate) const fn strain_to_sys(strain: Strain) -> usize {
+pub const fn strain_to_sys(strain: Strain) -> usize {
     match strain {
         Strain::Spades => 0,
         Strain::Hearts => 1,
@@ -268,8 +268,10 @@ impl From<TrickCountTable> for sys::ddTableResults {
     }
 }
 
-/// Convert a [`Builder`] into the ddss `ddTableDeal`.  `Builder` is
-/// unvalidated, so prefer the [`FullDeal`](contract_bridge::deal::FullDeal) or
+/// Low-level conversion from a [`Builder`] into a ddss `ddTableDeal`.
+///
+/// `Builder` is unvalidated, so prefer the
+/// [`FullDeal`](contract_bridge::deal::FullDeal) or
 /// [`PartialDeal`](contract_bridge::deal::PartialDeal) entry points via
 /// [`dd_table_deal_from`].
 #[must_use]
