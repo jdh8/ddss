@@ -22,11 +22,11 @@ fn bench_solve_deals_batch(c: &mut Criterion) {
     let mut rng = SmallRng::seed_from_u64(1);
     let solver = Solver::lock();
     let mut group = c.benchmark_group("solve_deals_batch");
-    // 10 samples (criterion's floor) + 90 s budget keeps N=1000 tractable
-    // since a single iteration alone exceeds the default 5 s measurement_time.
+    // 10 samples (criterion's floor) + 30 s budget covers 10 iters at N=200
+    // (~22 s) without tripping criterion's "took longer than configured" warning.
     group.sample_size(10);
-    group.measurement_time(Duration::from_secs(90));
-    for &n in &[32_usize, 200, 1000] {
+    group.measurement_time(Duration::from_secs(30));
+    for &n in &[32_usize, 200] {
         let deals: Vec<_> = (0..n).map(|_| full_deal(&mut rng)).collect();
         group.throughput(Throughput::Elements(n as u64));
         group.bench_with_input(BenchmarkId::from_parameter(n), &deals, |b, deals| {
