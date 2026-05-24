@@ -4,6 +4,18 @@
 
 ### Added
 
+- Ten tests ported from sibling crate `dds-bridge` for parity:
+  `analyse_play_optimal_card_preserves_dd_value`,
+  `solve_deals_parallel_matches_sequential` (16 seeded random deals),
+  the four `SystemInfo` getter tests
+  (`system_info_{num_threads_is_positive,thread_sizes_is_nonempty,
+  system_string_is_nonempty,display_matches_system_string}`),
+  three additional `Board::try_new` revoke-validation cases
+  (`board_try_new_{accepts_non_revoke_discard,detects_revoke_on_third_card,
+  empty_and_single_card_tricks_cannot_revoke}`), and
+  `current_trick_try_push_refuses_fourth_card`. The four `SystemInfo`
+  tests acquire `Solver::lock()` to ensure the global thread pool is
+  initialized before reading thread-derived fields.
 - `solve_deals_crosses_chunk_boundary` test in `tests/solver.rs`,
   migrated from `pons` (where it exercised only ddss + contract-bridge
   APIs). Runs `2 * MAXNOOFBOARDS / 5` random deals through

@@ -310,6 +310,49 @@ fn solve_deals_batch_matches_sequential() -> Result<(), Builder> {
     Ok(())
 }
 
+/// `solve_deals` must agree with sequential `solve_deal` on a seeded random
+/// batch.  Complements the hand-crafted [`solve_deals_batch_matches_sequential`]
+/// by stressing the batch path with deals the author didn't pick by hand —
+/// the fixed seed keeps regressions reproducible.
+#[test]
+fn solve_deals_parallel_matches_sequential() {
+    use rand::prelude::*;
+
+    fn random_deals(n: usize, seed: u64) -> Vec<contract_bridge::FullDeal> {
+        let mut rng = StdRng::seed_from_u64(seed);
+        #[allow(clippy::cast_possible_truncation)]
+        let mut deck: [u8; 52] = core::array::from_fn(|i| i as u8);
+        (0..n)
+            .map(|_| {
+                deck.shuffle(&mut rng);
+                let mut hand_bits = [0u64; 4];
+                for (i, &card) in deck.iter().enumerate() {
+                    let seat = i / 13;
+                    let suit = u32::from(card / 13);
+                    let rank = u32::from(card % 13) + 2;
+                    hand_bits[seat] |= 1u64 << (suit * 16 + rank);
+                }
+                let [n, e, s, w] = hand_bits.map(Hand::from_bits_retain);
+                contract_bridge::Builder::new()
+                    .north(n)
+                    .east(e)
+                    .south(s)
+                    .west(w)
+                    .build_full()
+                    .expect("13 cards per seat by construction")
+            })
+            .collect()
+    }
+
+    let deals = random_deals(16, 0x000C_0FFE_ED05);
+    let solver = Solver::lock();
+    let batch = solver.solve_deals(&deals, NonEmptyStrainFlags::ALL);
+    let sequential: Vec<_> = deals.iter().map(|&d| solver.solve_deal(d)).collect();
+    core::mem::drop(solver);
+    assert_eq!(batch.len(), deals.len());
+    assert_eq!(batch, sequential);
+}
+
 /// `solve_deals` and `solve_boards` must not overflow Windows' 1 MB
 /// default thread stack. The batch entry points internally allocate
 /// multi-hundred-KB FFI packs; if any of them are constructed on the
@@ -383,6 +426,39 @@ fn analyse_play_empty_trace_complements_solve_board() -> anyhow::Result<()> {
         u8::from(analysis.tricks[0]) + u8::from(found.plays[0].score),
         13,
     );
+    Ok(())
+}
+
+/// Playing a card that `solve_board` ranks first must preserve the
+/// declarer-side DD value across the card.
+#[test]
+fn analyse_play_optimal_card_preserves_dd_value() -> anyhow::Result<()> {
+    const A54: Holding = Holding::from_bits_truncate(0b100_0000_0011_0000);
+    const QJ32: Holding = Holding::from_bits_truncate(0b001_1000_0000_1100);
+    const K976: Holding = Holding::from_bits_truncate(0b010_0010_1100_0000);
+    const T8: Holding = Holding::from_bits_truncate(0b000_0101_0000_0000);
+    const DEAL: Builder = Builder::new()
+        .north(Hand::new(A54, QJ32, K976, T8))
+        .east(Hand::new(T8, A54, QJ32, K976))
+        .south(Hand::new(K976, T8, A54, QJ32))
+        .west(Hand::new(QJ32, K976, T8, A54));
+    let partial = DEAL
+        .build_partial()
+        .map_err(|_| anyhow::anyhow!("DEAL is not a valid partial deal"))?;
+    let board = Board::try_new(partial, CurrentTrick::new(Strain::Notrump, Seat::North))?;
+    let solver = Solver::lock();
+    let found = solver.solve_board(&Objective {
+        board: board.clone(),
+        target: Target::Any(None),
+    });
+    let best = found.plays[0];
+    let mut cards = ArrayVec::new();
+    cards.push(best.card);
+    let analysis = solver.analyse_play(&PlayTrace { board, cards });
+    core::mem::drop(solver);
+    assert_eq!(analysis.tricks.len(), 2);
+    assert_eq!(analysis.tricks[0], analysis.tricks[1]);
+    assert_eq!(u8::from(analysis.tricks[0]) + u8::from(best.score), 13);
     Ok(())
 }
 
@@ -480,6 +556,33 @@ fn system_info_num_cores_is_positive() {
 }
 
 #[test]
+fn system_info_num_threads_is_positive() {
+    // Hold the global lock so the ddss thread pool is initialized before
+    // we query thread-derived fields; see `system_info_threading_is_stl`.
+    let _guard = Solver::lock();
+    assert!(system_info().num_threads() > 0);
+}
+
+#[test]
+fn system_info_thread_sizes_is_nonempty() {
+    let _guard = Solver::lock();
+    assert!(!system_info().thread_sizes().is_empty());
+}
+
+#[test]
+fn system_info_system_string_is_nonempty() {
+    let _guard = Solver::lock();
+    assert!(!system_info().system_string().is_empty());
+}
+
+#[test]
+fn system_info_display_matches_system_string() {
+    let _guard = Solver::lock();
+    let info = system_info();
+    assert_eq!(info.to_string(), info.system_string());
+}
+
+#[test]
 fn trick_count_try_new_rejects_out_of_range() {
     assert_eq!(TrickCount::try_new(14), Err(InvalidTrickCount));
     assert_eq!(TrickCount::try_new(255), Err(InvalidTrickCount));
@@ -551,6 +654,127 @@ fn board_try_new_detects_revoke_on_second_card() -> Result<(), CurrentTrickError
     Ok(())
 }
 
+/// Same shape, but East genuinely has no spades — a legal discard.
+#[test]
+fn board_try_new_accepts_non_revoke_discard() -> Result<(), CurrentTrickError> {
+    // East has only hearts after the trick; playing ♥2 off the ♠A lead is legal.
+    let remaining = subset_from(
+        [c(Suit::Hearts, 3), c(Suit::Hearts, 4), c(Suit::Hearts, 5)],
+        [c(Suit::Hearts, 6), c(Suit::Hearts, 7), c(Suit::Hearts, 8)],
+        [
+            c(Suit::Diamonds, 2),
+            c(Suit::Diamonds, 3),
+            c(Suit::Diamonds, 4),
+            c(Suit::Diamonds, 5),
+        ],
+        [
+            c(Suit::Clubs, 2),
+            c(Suit::Clubs, 3),
+            c(Suit::Clubs, 4),
+            c(Suit::Clubs, 5),
+        ],
+    );
+    let played = [c(Suit::Spades, 14), c(Suit::Hearts, 2)];
+    assert!(
+        Board::try_new(
+            remaining,
+            CurrentTrick::from_slice(Strain::Notrump, Seat::North, &played)?,
+        )
+        .is_ok()
+    );
+    Ok(())
+}
+
+/// Only the third played card revokes; earlier cards followed suit.
+#[test]
+fn board_try_new_detects_revoke_on_third_card() -> Result<(), CurrentTrickError> {
+    // North ♠A, East ♠2 (follows), South ♥3 while still holding ♠Q → revoke at index 2.
+    let remaining = subset_from(
+        [c(Suit::Hearts, 4), c(Suit::Hearts, 5), c(Suit::Hearts, 6)],
+        [c(Suit::Clubs, 14), c(Suit::Clubs, 13), c(Suit::Clubs, 12)],
+        [c(Suit::Spades, 12), c(Suit::Clubs, 11), c(Suit::Clubs, 10)],
+        [
+            c(Suit::Diamonds, 2),
+            c(Suit::Diamonds, 3),
+            c(Suit::Diamonds, 4),
+            c(Suit::Diamonds, 5),
+        ],
+    );
+    let played = [c(Suit::Spades, 14), c(Suit::Spades, 2), c(Suit::Hearts, 3)];
+    assert_eq!(
+        Board::try_new(
+            remaining,
+            CurrentTrick::from_slice(Strain::Notrump, Seat::North, &played)?,
+        ),
+        Err(BoardError::Revoke {
+            position: RevokePosition::Third
+        })
+    );
+    Ok(())
+}
+
+/// A lone lead (one card on the table) cannot revoke, nor can an empty trick.
+#[test]
+fn board_try_new_empty_and_single_card_tricks_cannot_revoke() -> Result<(), CurrentTrickError> {
+    let full = subset_from(
+        [
+            c(Suit::Spades, 14),
+            c(Suit::Hearts, 3),
+            c(Suit::Hearts, 4),
+            c(Suit::Hearts, 5),
+        ],
+        [
+            c(Suit::Spades, 13),
+            c(Suit::Hearts, 6),
+            c(Suit::Hearts, 7),
+            c(Suit::Hearts, 8),
+        ],
+        [
+            c(Suit::Diamonds, 2),
+            c(Suit::Diamonds, 3),
+            c(Suit::Diamonds, 4),
+            c(Suit::Diamonds, 5),
+        ],
+        [
+            c(Suit::Clubs, 2),
+            c(Suit::Clubs, 3),
+            c(Suit::Clubs, 4),
+            c(Suit::Clubs, 5),
+        ],
+    );
+    assert!(Board::try_new(full, CurrentTrick::new(Strain::Notrump, Seat::North)).is_ok());
+
+    let after_lead = subset_from(
+        [c(Suit::Hearts, 3), c(Suit::Hearts, 4), c(Suit::Hearts, 5)],
+        [
+            c(Suit::Spades, 13),
+            c(Suit::Hearts, 6),
+            c(Suit::Hearts, 7),
+            c(Suit::Hearts, 8),
+        ],
+        [
+            c(Suit::Diamonds, 2),
+            c(Suit::Diamonds, 3),
+            c(Suit::Diamonds, 4),
+            c(Suit::Diamonds, 5),
+        ],
+        [
+            c(Suit::Clubs, 2),
+            c(Suit::Clubs, 3),
+            c(Suit::Clubs, 4),
+            c(Suit::Clubs, 5),
+        ],
+    );
+    assert!(
+        Board::try_new(
+            after_lead,
+            CurrentTrick::from_slice(Strain::Notrump, Seat::North, &[c(Suit::Spades, 14)])?,
+        )
+        .is_ok()
+    );
+    Ok(())
+}
+
 /// `CurrentTrick::from_slice` rejects more than three cards.
 #[test]
 fn current_trick_from_slice_rejects_overlong() {
@@ -574,6 +798,26 @@ fn current_trick_from_slice_rejects_duplicate() {
         CurrentTrick::from_slice(Strain::Notrump, Seat::North, &played),
         Err(CurrentTrickError::DuplicatePlayedCard),
     );
+}
+
+/// `CurrentTrick::try_push` enforces the 0–3-cards cap.
+#[test]
+fn current_trick_try_push_refuses_fourth_card() -> Result<(), CurrentTrickError> {
+    let mut trick = CurrentTrick::from_slice(
+        Strain::Notrump,
+        Seat::North,
+        &[
+            c(Suit::Spades, 14),
+            c(Suit::Spades, 13),
+            c(Suit::Spades, 12),
+        ],
+    )?;
+    assert_eq!(
+        trick.try_push(c(Suit::Spades, 11)),
+        Err(CurrentTrickError::TooManyPlayed),
+    );
+    assert_eq!(trick.cards().len(), 3);
+    Ok(())
 }
 
 #[test]
