@@ -4,6 +4,12 @@
 
 ### Added
 
+- Criterion benchmark `solver` covering double-dummy solving on random
+  deals: `solve_deal_single` times one `Solver::solve_deal` call per
+  iteration (fresh per-iteration random deal via `iter_batched`), and
+  `solve_deals_batch/32` times a 32-deal `Solver::solve_deals` call with
+  `NonEmptyStrainFlags::ALL` (sample size 20 to keep wall time reasonable).
+  Establishes a baseline for tracking regressions in ddss/ddss-sys.
 - Ten tests ported from sibling crate `dds-bridge` for parity:
   `analyse_play_optimal_card_preserves_dd_value`,
   `solve_deals_parallel_matches_sequential` (16 seeded random deals),
