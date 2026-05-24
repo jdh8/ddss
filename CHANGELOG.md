@@ -7,8 +7,12 @@
 - Criterion benchmark `solver` covering double-dummy solving on random
   deals: `solve_deal_single` times one `Solver::solve_deal` call per
   iteration (fresh per-iteration random deal via `iter_batched`), and
-  `solve_deals_batch/32` times a 32-deal `Solver::solve_deals` call with
-  `NonEmptyStrainFlags::ALL` (sample size 20 to keep wall time reasonable).
+  `solve_deals_batch/{32,200,1000}` times `Solver::solve_deals` with
+  `NonEmptyStrainFlags::ALL` across three batch sizes — the largest
+  matches the per-chunk ceiling (`MAXNOOFBOARDS / 5`). Sample count is
+  pinned at criterion's floor (10) with a 90 s per-bench measurement
+  budget so the N=1000 case fits in one iteration; throughput is reported
+  in elements/sec so per-deal cost is comparable across sizes.
   Establishes a baseline for tracking regressions in ddss/ddss-sys.
 - Ten tests ported from sibling crate `dds-bridge` for parity:
   `analyse_play_optimal_card_preserves_dd_value`,
