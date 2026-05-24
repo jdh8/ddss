@@ -30,6 +30,12 @@
 
 ### Changed
 
+- `solve_deals_crosses_chunk_boundary` test sample size reduced from
+  `2 * MAXNOOFBOARDS / 5` (2000 deals) to `MAXNOOFBOARDS / 5 + 10`
+  (1010 deals). Still produces a second chunk — the boundary-crossing
+  code path the test exists to exercise — but ~halves wall-clock for a
+  test that gates the rest of the suite via the global `Solver::lock()`.
+  Test-release CI time drops accordingly.
 - `[profile.dev.package."*"]` set to `opt-level = 2`, so dependencies
   (including ddss-sys's C++ DDS engine via `cc`) are optimized in dev
   builds. ddss's own Rust stays at opt-level 0 so the

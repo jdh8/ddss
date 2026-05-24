@@ -834,12 +834,13 @@ fn vulnerability_display_fromstr_roundtrip() {
 
 /// `solve_deals` must match sequential `solve_deal` across a batch large
 /// enough to cross at least one internal chunk boundary.  With all five
-/// strains selected, the per-chunk capacity is `MAXNOOFBOARDS / 5`; this
-/// test runs twice that many random deals through the batch path.
+/// strains selected, the per-chunk capacity is `MAXNOOFBOARDS / 5`; one
+/// full chunk plus a small residual is enough to exercise the second
+/// chunk without doubling the (lock-gated) test wall-clock.
 #[test]
 #[cfg_attr(miri, ignore = "ddss-sys performs FFI which Miri cannot execute")]
 fn solve_deals_crosses_chunk_boundary() {
-    const N: usize = ddss_sys::MAXNOOFBOARDS as usize / 5 * 2;
+    const N: usize = ddss_sys::MAXNOOFBOARDS as usize / 5 + 10;
     let deals: Vec<_> = (0..N).map(|_| full_deal(&mut rand::rng())).collect();
     let solver = Solver::lock();
     let array: Vec<_> = deals.iter().map(|&x| solver.solve_deal(x)).collect();
