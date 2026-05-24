@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1779650965517,
+  "lastUpdate": 1779652063767,
   "repoUrl": "https://github.com/jdh8/ddss",
   "entries": {
     "Benchmark": [
@@ -41,6 +41,48 @@ window.BENCHMARK_DATA = {
             "name": "solve_deals_batch/200",
             "value": 13068385161,
             "range": "± 40034530",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "chen.pang.he@jdh8.org",
+            "name": "Chen-Pang He",
+            "username": "jdh8"
+          },
+          "committer": {
+            "email": "chen.pang.he@jdh8.org",
+            "name": "Chen-Pang He",
+            "username": "jdh8"
+          },
+          "distinct": true,
+          "id": "29a88ea22ed58c5dd552efe3e94e2388d35c7926",
+          "message": "Link benchmark chart from README badge row\n\nThe bench CI job publishes Criterion numbers to\nhttps://jdh8.github.io/ddss/dev/bench/ on every push to main, but\nnothing in the user-facing repo surface pointed there. Adds a fourth\nshields.io badge next to Build/Crates.io/Docs.rs so the chart is\ndiscoverable from the first row a reader scans.\n\nStatic \"benchmarks: published\" label — github-action-benchmark doesn't\nexpose a JSON endpoint for shields.io to read a live number from.",
+          "timestamp": "2026-05-25T03:42:30+08:00",
+          "tree_id": "b7fd19e20d4bddeb6425437cd4a2f4242e2acf39",
+          "url": "https://github.com/jdh8/ddss/commit/29a88ea22ed58c5dd552efe3e94e2388d35c7926"
+        },
+        "date": 1779652063523,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "solve_deal_single",
+            "value": 73981497,
+            "range": "± 183827080",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "solve_deals_batch/32",
+            "value": 2406416674,
+            "range": "± 5079437",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "solve_deals_batch/200",
+            "value": 16544292079,
+            "range": "± 66917688",
             "unit": "ns/iter"
           }
         ]
