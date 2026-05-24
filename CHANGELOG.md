@@ -37,6 +37,16 @@
   ubuntu+stable. Catches the converse of the 0.1.2 stack-temp bug
   class: UB-in-unsafe miscompilations, inlining-exposed preconditions,
   and aggressive-inlining stack growth that only surface at -O2/-O3.
+- `bench` CI job that runs the `solver` Criterion bench on each push
+  to `main` (and `workflow_dispatch`) and publishes results to a
+  `gh-pages` branch via `benchmark-action/github-action-benchmark`.
+  Numbers and historical chart will be visible at
+  `https://jdh8.github.io/ddss/dev/bench/` once GitHub Pages is enabled
+  for the repo (Settings → Pages → Deploy from branch → `gh-pages`,
+  root). Alert threshold is set permissively (200%) because GHA
+  shared-runner variance on solver-heavy work would otherwise trip
+  false alarms; `fail-on-alert` is off so a noisy run cannot block
+  main.
 
 ### Changed
 
