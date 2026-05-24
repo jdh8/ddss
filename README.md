@@ -3,6 +3,7 @@
 [![Build Status](https://github.com/jdh8/ddss/actions/workflows/rust.yml/badge.svg)](https://github.com/jdh8/ddss/actions/workflows/rust.yml)
 [![Crates.io](https://img.shields.io/crates/v/ddss.svg)](https://crates.io/crates/ddss)
 [![Docs.rs](https://docs.rs/ddss/badge.svg)](https://docs.rs/ddss)
+[![Benchmarks](https://img.shields.io/badge/benchmarks-published-blue?logo=github)](https://jdh8.github.io/ddss/dev/bench/)
 
 Rusty API for [ddss](https://github.com/bsalita/ddss), a performance-oriented
 fork of the [DDS](https://github.com/dds-bridge/dds) double dummy solver for
