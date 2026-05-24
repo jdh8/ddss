@@ -845,5 +845,6 @@ fn solve_deals_crosses_chunk_boundary() {
     let solver = Solver::lock();
     let array: Vec<_> = deals.iter().map(|&x| solver.solve_deal(x)).collect();
     let vec = solver.solve_deals(&deals, NonEmptyStrainFlags::ALL);
+    core::mem::drop(solver);
     assert_eq!(array, vec);
 }
