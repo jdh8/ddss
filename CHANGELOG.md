@@ -4,6 +4,10 @@
 
 ### Added
 
+- CI benchmark publishing has been extracted into a dedicated
+  `.github/workflows/bench.yml` workflow (triggered on pushes to `main`
+  and manual dispatch), and the README benchmark badge now reflects that
+  workflow status while still linking to the published dashboard.
 - Criterion benchmark `solver` covering double-dummy solving on random
   deals: `solve_deal_single` times one `Solver::solve_deal` call per
   iteration (fresh per-iteration random deal via `iter_batched`), and
