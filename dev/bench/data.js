@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1780270329328,
+  "lastUpdate": 1781509975125,
   "repoUrl": "https://github.com/jdh8/ddss",
   "entries": {
     "Benchmark": [
@@ -125,6 +125,48 @@ window.BENCHMARK_DATA = {
             "name": "solve_deals_batch/200",
             "value": 17179536910,
             "range": "± 68484730",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "chen.pang.he@jdh8.org",
+            "name": "Chen-Pang He",
+            "username": "jdh8"
+          },
+          "committer": {
+            "email": "chen.pang.he@jdh8.org",
+            "name": "Chen-Pang He",
+            "username": "jdh8"
+          },
+          "distinct": true,
+          "id": "bf4acf7b72420f66d311330b587d0215f37c4ab9",
+          "message": "feat(solver): add with_max_threads; reset pool to auto on lock\n\nddss's global thread pool was hard-wired to SetMaxThreads(0) with no way to\noverride the worker count. Add Solver::with_max_threads(n) (0 = auto-detect)\nalongside lock()/try_lock(), and reconcile the count on every acquisition:\nlock()/try_lock() reset to auto-detect so a custom count never leaks into a\nlater plain lock, while with_max_threads() sets it for the next acquisition.\n\nA private CONFIGURED_THREADS atomic (touched only under the pool lock) tracks\nthe installed count so SetMaxThreads -- which frees and reallocates the pool --\nruns only when the count actually changes; repeated same-count acquisitions\nstay cheap. Reconfiguring under the lock keeps the rebuild from racing a\nconcurrent solve.\n\nCovered by with_max_threads_sets_pool_size and lock_resets_thread_count_to_auto.\nBump version to 0.1.3-dev.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-06-15T15:47:28+08:00",
+          "tree_id": "3c0e4807922fed7ef837c525e000c8a9c0a05dad",
+          "url": "https://github.com/jdh8/ddss/commit/bf4acf7b72420f66d311330b587d0215f37c4ab9"
+        },
+        "date": 1781509974811,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "solve_deal_single",
+            "value": 75387634,
+            "range": "± 185185767",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "solve_deals_batch/32",
+            "value": 2449176014,
+            "range": "± 10156406",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "solve_deals_batch/200",
+            "value": 17136923244,
+            "range": "± 102883681",
             "unit": "ns/iter"
           }
         ]
