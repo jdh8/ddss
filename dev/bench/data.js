@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781865877917,
+  "lastUpdate": 1781873022351,
   "repoUrl": "https://github.com/jdh8/ddss",
   "entries": {
     "Benchmark": [
@@ -209,6 +209,48 @@ window.BENCHMARK_DATA = {
             "name": "solve_deals_batch/200",
             "value": 16774318403,
             "range": "± 60377557",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "chen.pang.he@jdh8.org",
+            "name": "Chen-Pang He",
+            "username": "jdh8"
+          },
+          "committer": {
+            "email": "chen.pang.he@jdh8.org",
+            "name": "Chen-Pang He",
+            "username": "jdh8"
+          },
+          "distinct": true,
+          "id": "d4e0e40edf97dfd16532bd2c9a5fab8407347fc0",
+          "message": "ci(readme): split benchmark workflow and update badges",
+          "timestamp": "2026-06-01T07:26:31+08:00",
+          "tree_id": "79823832faa641d11185b0c337f316e16e798cf5",
+          "url": "https://github.com/jdh8/ddss/commit/d4e0e40edf97dfd16532bd2c9a5fab8407347fc0"
+        },
+        "date": 1781873022083,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "solve_deal_single",
+            "value": 76417046,
+            "range": "± 175008457",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "solve_deals_batch/32",
+            "value": 2423658076,
+            "range": "± 8125496",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "solve_deals_batch/200",
+            "value": 16665433816,
+            "range": "± 63040058",
             "unit": "ns/iter"
           }
         ]
