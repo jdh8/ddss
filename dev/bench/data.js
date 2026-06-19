@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781509975125,
+  "lastUpdate": 1781865877917,
   "repoUrl": "https://github.com/jdh8/ddss",
   "entries": {
     "Benchmark": [
@@ -167,6 +167,48 @@ window.BENCHMARK_DATA = {
             "name": "solve_deals_batch/200",
             "value": 17136923244,
             "range": "± 102883681",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "chen.pang.he@jdh8.org",
+            "name": "Chen-Pang He",
+            "username": "jdh8"
+          },
+          "committer": {
+            "email": "chen.pang.he@jdh8.org",
+            "name": "Chen-Pang He",
+            "username": "jdh8"
+          },
+          "distinct": true,
+          "id": "6a2d66338153e6081deaf5a8e8f2c1a68759bbd6",
+          "message": "Ignore release-notes scratch files\n\nKeeps copy-paste-into-GitHub release notes out of the published crate\nand out of `git status`.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-06-19T18:38:11+08:00",
+          "tree_id": "2b53215f2b6e1480cd430b57551970d71603a952",
+          "url": "https://github.com/jdh8/ddss/commit/6a2d66338153e6081deaf5a8e8f2c1a68759bbd6"
+        },
+        "date": 1781865877671,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "solve_deal_single",
+            "value": 74590143,
+            "range": "± 179307854",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "solve_deals_batch/32",
+            "value": 2427084042,
+            "range": "± 6627965",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "solve_deals_batch/200",
+            "value": 16774318403,
+            "range": "± 60377557",
             "unit": "ns/iter"
           }
         ]
