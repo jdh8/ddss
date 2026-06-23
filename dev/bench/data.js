@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781873022351,
+  "lastUpdate": 1782232976842,
   "repoUrl": "https://github.com/jdh8/ddss",
   "entries": {
     "Benchmark": [
@@ -251,6 +251,48 @@ window.BENCHMARK_DATA = {
             "name": "solve_deals_batch/200",
             "value": 16665433816,
             "range": "± 63040058",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "chen.pang.he@jdh8.org",
+            "name": "Chen-Pang He",
+            "username": "jdh8"
+          },
+          "committer": {
+            "email": "chen.pang.he@jdh8.org",
+            "name": "Chen-Pang He",
+            "username": "jdh8"
+          },
+          "distinct": true,
+          "id": "d27af55e54e8af9fac694ecafb36f4250e1002b1",
+          "message": "Add GIB hand-record view to TrickCountTable\n\n`TrickCountTable::gib()` returns a `TrickCountTableGib` whose `UpperHex`\nimpl emits the 20-digit GIB double-dummy tail (NT,S,H,D,C × E,N,W,S, with\nE/W stored as 13−tricks). `from_gib()` parses it back. Requested by pons.\n\nRelease 0.1.3.\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-06-24T00:37:34+08:00",
+          "tree_id": "5f035e4e1a99b8562b6c2cd9ba309ed491d4a47a",
+          "url": "https://github.com/jdh8/ddss/commit/d27af55e54e8af9fac694ecafb36f4250e1002b1"
+        },
+        "date": 1782232976313,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "solve_deal_single",
+            "value": 77134381,
+            "range": "± 182760692",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "solve_deals_batch/32",
+            "value": 2475953886,
+            "range": "± 16503323",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "solve_deals_batch/200",
+            "value": 17034928808,
+            "range": "± 60877500",
             "unit": "ns/iter"
           }
         ]
