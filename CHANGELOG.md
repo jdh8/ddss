@@ -1,9 +1,16 @@
 # Changelog
 
-## [Unreleased]
+## [0.1.3] - 2026-06-24
 
 ### Added
 
+- `TrickCountTable::gib` and `TrickCountTable::from_gib`, plus the
+  `TrickCountTableGib` view (its `UpperHex` impl): the 20-digit GIB
+  double-dummy hand-record tail used by deal databases like
+  `sol100000.txt`. Strains in `NT, S, H, D, C` order, declarers
+  `E, N, W, S`, with East/West cells stored as `13 − tricks`. `gib()`
+  formats the tail; `from_gib()` is the exact inverse. Requested by
+  downstream `pons`.
 - CI benchmark publishing has been extracted into a dedicated
   `.github/workflows/bench.yml` workflow (triggered on pushes to `main`
   and manual dispatch), and the README benchmark badge now reflects that
@@ -146,3 +153,4 @@ Initial release. High-level wrapper around [`ddss-sys`](https://crates.io/crates
 [0.1.0]: https://github.com/jdh8/ddss/releases/tag/0.1.0
 [0.1.1]: https://github.com/jdh8/ddss/releases/tag/0.1.1
 [0.1.2]: https://github.com/jdh8/ddss/releases/tag/0.1.2
+[0.1.3]: https://github.com/jdh8/ddss/releases/tag/0.1.3

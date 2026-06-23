@@ -188,6 +188,87 @@ impl TrickCountTable {
             strains,
         }
     }
+
+    /// GIB hand-record view of the whole table.
+    ///
+    /// The 20-digit double-dummy tail used by GIB deal databases (e.g.
+    /// `sol100000.txt`): strains in the fixed order `NT, S, H, D, C`, declarers
+    /// `E, N, W, S`, with the East/West cells stored as `13 − tricks`. Formats
+    /// to 20 uppercase hex digits via the [`UpperHex`](fmt::UpperHex) impl —
+    /// the inverse of [`from_gib`](Self::from_gib).
+    #[must_use]
+    pub const fn gib(self) -> TrickCountTableGib {
+        TrickCountTableGib { table: self }
+    }
+
+    /// Parse a GIB hand-record tail (the 20 hex digits after the deal) back
+    /// into a table. Inverse of [`gib`](Self::gib).
+    ///
+    /// # Panics
+    ///
+    /// If `hex` has fewer than 20 bytes, or any of the first 20 is not an
+    /// ASCII hex digit.
+    #[must_use]
+    pub fn from_gib(hex: &[u8]) -> Self {
+        #[allow(clippy::cast_possible_truncation)]
+        let digit = |i: usize| {
+            (hex[i] as char)
+                .to_digit(16)
+                .expect("GIB tail digit must be hex") as u8
+        };
+        let mut rows = [TrickCountRow::new(0, 0, 0, 0); 5];
+        for (s, &strain) in GIB_STRAINS.iter().enumerate() {
+            // GIB declarer order within a strain is E, N, W, S; E/W store 13−tricks.
+            let undo = |seat: Seat, raw: u8| match seat {
+                Seat::East | Seat::West => 13 - raw,
+                _ => raw,
+            };
+            let e = undo(Seat::East, digit(4 * s));
+            let n = undo(Seat::North, digit(4 * s + 1));
+            let w = undo(Seat::West, digit(4 * s + 2));
+            let south = undo(Seat::South, digit(4 * s + 3));
+            // `Index<Strain>` reads `self.0[strain as usize]`; assign to match.
+            rows[strain as usize] = TrickCountRow::new(n, e, south, w);
+        }
+        Self(rows)
+    }
+}
+
+/// Strains in GIB hand-record order.
+const GIB_STRAINS: [Strain; 5] = [
+    Strain::Notrump,
+    Strain::Spades,
+    Strain::Hearts,
+    Strain::Diamonds,
+    Strain::Clubs,
+];
+
+/// Declarers in GIB hand-record order (within each strain).
+const GIB_SEATS: [Seat; 4] = [Seat::East, Seat::North, Seat::West, Seat::South];
+
+/// GIB hand-record view of a [`TrickCountTable`]
+///
+/// Returned by [`TrickCountTable::gib`]. See that method for the layout.
+#[derive(Debug, Clone, Copy)]
+pub struct TrickCountTableGib {
+    table: TrickCountTable,
+}
+
+impl fmt::UpperHex for TrickCountTableGib {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for &strain in &GIB_STRAINS {
+            let row = self.table[strain];
+            for &seat in &GIB_SEATS {
+                let tricks = row.get(seat).get();
+                let stored = match seat {
+                    Seat::East | Seat::West => 13 - tricks,
+                    _ => tricks,
+                };
+                write!(f, "{stored:X}")?;
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Hexadecimal view of a [`TrickCountTable`] from a seat's perspective
@@ -295,4 +376,24 @@ pub fn dd_table_deal_from_builder(builder: Builder) -> sys::ddTableDeal {
 #[must_use]
 pub fn dd_table_deal_from(deal: impl Into<Builder>) -> sys::ddTableDeal {
     dd_table_deal_from_builder(deal.into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `from_gib` and `gib` are exact inverses, and `gib` reproduces a stored
+    /// `sol100000.txt` tail (the first DB line) byte-for-byte. The E/W `13−tricks`
+    /// complement and the `NT,S,H,D,C` × `E,N,W,S` order are both exercised.
+    #[test]
+    fn gib_round_trip() {
+        const TAIL: &str = "65658888888843433232";
+        let table = TrickCountTable::from_gib(TAIL.as_bytes());
+        assert_eq!(format!("{:X}", table.gib()), TAIL);
+
+        // Spot-check decoded values: E/W make 10 clubs (their 10-card fit minus
+        // K-Q), N/S make 8 spades; the E/W club cell survives the complement.
+        assert_eq!(table[Strain::Clubs].get(Seat::East).get(), 10);
+        assert_eq!(table[Strain::Spades].get(Seat::North).get(), 8);
+    }
 }
