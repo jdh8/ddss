@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784959354514,
+  "lastUpdate": 1784966227048,
   "repoUrl": "https://github.com/jdh8/ddss",
   "entries": {
     "Benchmark": [
@@ -335,6 +335,48 @@ window.BENCHMARK_DATA = {
             "name": "solve_deals_batch/200",
             "value": 16930063645,
             "range": "± 104610420",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "chen.pang.he@jdh8.org",
+            "name": "Chen-Pang He",
+            "username": "jdh8"
+          },
+          "committer": {
+            "email": "chen.pang.he@jdh8.org",
+            "name": "Chen-Pang He",
+            "username": "jdh8"
+          },
+          "distinct": true,
+          "id": "ca3715558e3b4a211da5117523b7a377b00fa995",
+          "message": "Resize the thread pool on demand now that ddss-sys 0.1.3 allows it\n\nddss-sys 0.1.3 vendors the fixes proposed in BSalita/ddss#1: GetHardware\ncloses its popen stream with pclose instead of fclose, and SetResources\nbails out before freeing the thread memory when the new configuration is\ninfeasible. Repeated serialized SetMaxThreads calls are therefore safe,\nso the configure-once semantics 0.2.0 was drafted with are no longer\nforced by the C++:\n\n- Solver::lock/try_lock still take threads: Option<NonZero<usize>>, but\n  every lock now states the desired pool size and the last lock wins:\n  a request differing from the last applied one rebuilds the pool (and\n  its per-thread transposition tables), same-value repeats are skipped,\n  and None means no maximum - enforced, so it also uncaps a capped\n  pool. The conflict panic is gone; calculate_par, calculate_pars, and\n  system_info still never alter the setting.\n- ddss-sys requirement raised to 0.1.3, the first version safe to\n  resize at runtime.\n- tests/thread_cap.rs now walks cap 2 -> same-value re-lock -> 3 -> 1\n  (the parked-pool quirk path) -> None, solving a fixture deal at every\n  step; thread_target unit tests cover the resize decisions.\n\nSince 0.2.0 was never published, this folds into the 0.2.0 changelog\nentry rather than minting a new version.\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-25T15:51:51+08:00",
+          "tree_id": "d73c825c998c5f349958a406ade21f0cac237be4",
+          "url": "https://github.com/jdh8/ddss/commit/ca3715558e3b4a211da5117523b7a377b00fa995"
+        },
+        "date": 1784966226741,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "solve_deal_single",
+            "value": 76750701,
+            "range": "± 184219633",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "solve_deals_batch/32",
+            "value": 2451905628,
+            "range": "± 15896909",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "solve_deals_batch/200",
+            "value": 16933504173,
+            "range": "± 89938517",
             "unit": "ns/iter"
           }
         ]
