@@ -39,8 +39,10 @@ use ddss_sys as sys;
 use parking_lot::{ReentrantMutex, ReentrantMutexGuard};
 
 use core::ffi::c_int;
+use core::marker::PhantomData;
 use core::mem::MaybeUninit;
-use std::sync::LazyLock;
+use core::num::NonZero;
+use core::sync::atomic::{AtomicI32, Ordering};
 
 /// Panics if `status` is negative, which indicates an error in ddss.  The
 /// panic message is a human-readable description of the error code returned
@@ -94,7 +96,7 @@ const fn check(status: i32) {
 /// Not expected — panics here are bugs. See the module-level panic policy.
 #[must_use]
 pub fn calculate_par(tricks: TrickCountTable, vul: Vulnerability, dealer: Seat) -> Par {
-    let _guard = THREAD_POOL.lock();
+    let _guard = lock_pool(None);
     let mut par = sys::parResultsMaster::default();
     let status = unsafe {
         sys::DealerParBin(
@@ -121,7 +123,7 @@ pub fn calculate_par(tricks: TrickCountTable, vul: Vulnerability, dealer: Seat) 
 /// Not expected — panics here are bugs. See the module-level panic policy.
 #[must_use]
 pub fn calculate_pars(tricks: TrickCountTable, vul: Vulnerability) -> [Par; 2] {
-    let _guard = THREAD_POOL.lock();
+    let _guard = lock_pool(None);
     let mut pars = [sys::parResultsMaster::default(); 2];
     let status = unsafe { sys::SidesParBin(&mut tricks.into(), &raw mut pars[0], vul.to_sys()) };
     check(status);
@@ -132,14 +134,77 @@ pub fn calculate_pars(tricks: TrickCountTable, vul: Vulnerability) -> [Par; 2] {
 ///
 /// Reentrant within a single thread so that helpers like [`calculate_par`]
 /// and [`system_info`] can be called from a thread that already holds a
-/// [`Solver`]; different threads still block. `SetMaxThreads(0)` is called
-/// on first acquisition to spin up ddss's internal thread pool.
-static THREAD_POOL: LazyLock<ReentrantMutex<()>> = LazyLock::new(|| {
-    // SAFETY: ddss accepts a thread count and configures its pool. Passing 0
-    // asks ddss to auto-detect.
-    unsafe { sys::SetMaxThreads(0) };
-    ReentrantMutex::new(())
-});
+/// [`Solver`]; different threads still block. ddss's thread pool is
+/// configured under this lock on first use of any entry point.
+static THREAD_POOL: ReentrantMutex<()> = ReentrantMutex::new(());
+
+/// Sentinel for [`APPLIED_THREADS`]: no `SetMaxThreads` call has happened yet.
+const UNINIT: i32 = -1;
+
+/// Thread count requested from ddss, configured at most once per process:
+/// [`UNINIT`], 0 for auto-detect, or a positive cap. Written and read only
+/// while holding [`THREAD_POOL`], whose release/acquire ordering provides
+/// the happens-before — `Relaxed` suffices.
+static APPLIED_THREADS: AtomicI32 = AtomicI32::new(UNINIT);
+
+/// Decides what to pass to `SetMaxThreads`, if anything.
+///
+/// `want` is `Some(n)` (n > 0) to request a thread cap or `None` when the
+/// caller has no preference. The pool is configured at most once per
+/// process: the first call picks the size (0 = ddss auto-detect) and later
+/// calls may only repeat it. Reconfiguring is not an option because the
+/// vendored ddss breaks on a second `SetResources`: on macOS,
+/// `System::GetHardware` reads free memory with `popen` but closes the
+/// stream with `fclose` instead of `pclose`, so every later call sees 0
+/// free kilobytes, computes a 0-thread configuration that `RegisterParams`
+/// rejects (keeping the stale pool and thread count), and empties the
+/// per-thread memory — the next solve then aborts the process from
+/// `Memory::GetPtr`.
+///
+/// # Panics
+///
+/// Panics when `want` requests a cap that differs from the applied
+/// configuration.
+fn thread_target(want: Option<i32>, applied: i32) -> Option<i32> {
+    match want {
+        None if applied == UNINIT => Some(0),
+        Some(n) if applied == UNINIT => Some(n),
+        Some(n) if n != applied => panic!(
+            "ddss thread pool is already configured with max_threads = {applied} \
+             (0 means no maximum) and cannot be resized at runtime; pass the \
+             desired cap ({n}) to the process's first ddss call instead"
+        ),
+        _ => None,
+    }
+}
+
+/// Configures the ddss thread pool; the guard witnesses that the caller
+/// holds [`THREAD_POOL`].
+fn apply_max_threads(_guard: &ReentrantMutexGuard<'static, ()>, want: Option<i32>) {
+    if let Some(target) = thread_target(want, APPLIED_THREADS.load(Ordering::Relaxed)) {
+        // SAFETY: the witness guard serializes this call against every other
+        // ddss entry point in this crate, and `thread_target` guarantees it
+        // is the process's only `SetMaxThreads` call — a serialized first
+        // call safely builds the pool.
+        unsafe { sys::SetMaxThreads(target) };
+        APPLIED_THREADS.store(target, Ordering::Relaxed);
+    }
+}
+
+/// Locks [`THREAD_POOL`] and applies the thread request (see
+/// [`thread_target`] for the `want` convention).
+fn lock_pool(want: Option<i32>) -> ReentrantMutexGuard<'static, ()> {
+    let guard = THREAD_POOL.lock();
+    apply_max_threads(&guard, want);
+    guard
+}
+
+/// Maps a requested cap to ddss's `SetMaxThreads` argument. ddss clamps the
+/// value to the detected core count, so saturating oversized requests at
+/// `i32::MAX` is exact.
+fn to_request(threads: NonZero<usize>) -> i32 {
+    i32::try_from(threads.get()).unwrap_or(i32::MAX)
+}
 
 /// Exclusive handle to the ddss solver
 ///
@@ -152,23 +217,91 @@ static THREAD_POOL: LazyLock<ReentrantMutex<()>> = LazyLock::new(|| {
 /// internally fan out across the ddss thread pool, so parallelism is still
 /// utilized within each call.
 ///
-/// `Solver` is `!Send` because [`ReentrantMutexGuard`] is `!Send` — the lock
-/// must be released on the same OS thread that acquired it.
-pub struct Solver(#[allow(dead_code)] ReentrantMutexGuard<'static, ()>);
+/// `Solver` is `!Send` and `!Sync`: the lock must be released on the same OS
+/// thread that acquired it, and sharing `&Solver` across threads would let
+/// two threads enter ddss's non-reentrant entry points at once.
+///
+/// ```compile_fail,E0277
+/// fn assert_send<T: Send>() {}
+/// assert_send::<ddss::Solver>();
+/// ```
+///
+/// ```compile_fail,E0277
+/// fn assert_sync<T: Sync>() {}
+/// assert_sync::<ddss::Solver>();
+/// ```
+pub struct Solver(
+    #[allow(dead_code)] ReentrantMutexGuard<'static, ()>,
+    // The guard alone leaks Sync (and its !Send lives in lock_api
+    // internals); *mut () pins !Send + !Sync while preserving unwind safety.
+    PhantomData<*mut ()>,
+);
 
 impl Solver {
     /// Acquire exclusive access to the ddss solver, blocking until available
+    ///
+    /// `threads` is the maximum size of ddss's global thread pool, which is
+    /// configured **once per process** by whichever entry point touches
+    /// ddss first:
+    ///
+    /// - `Some(n)` caps the pool at `n` threads. ddss clamps the effective
+    ///   size to the detected core count (and may shave off more under
+    ///   extreme memory pressure); observe the result via
+    ///   [`SystemInfo::num_threads`].
+    /// - `None` expresses no preference: auto-detect all cores if this is
+    ///   the first ddss call, otherwise keep the current configuration.
+    ///
+    /// To cap the pool, make `lock(Some(n))` the process's first ddss call
+    /// — before [`system_info`], [`calculate_par`], or [`calculate_pars`],
+    /// which auto-size the pool if they come first (like `None`, they never
+    /// change an existing configuration). The setting then holds for the
+    /// process lifetime: the vendored ddss cannot safely resize its pool at
+    /// runtime, so a later lock requesting a **different** cap panics.
+    /// Requests are compared by requested value (repeating the same value
+    /// is free), not by effective pool size.
+    ///
+    /// Capping is not pinning: to keep a macOS process on E-cores, combine a
+    /// cap with OS scheduling policy such as `taskpolicy -b` or a background
+    /// QoS class. The cap only prevents oversubscribing the cores the OS
+    /// grants.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the pool is already configured and `threads` requests a
+    /// different value than the pool was configured with. `None` never
+    /// panics.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use core::num::NonZero;
+    /// use ddss::Solver;
+    ///
+    /// // The first ddss call in the process fixes the pool size.
+    /// let _solver = Solver::lock(NonZero::new(2));
+    /// let info = ddss::system_info();
+    /// assert_eq!(info.num_threads(), 2.min(info.num_cores()));
+    /// ```
     #[must_use]
-    pub fn lock() -> Self {
-        Self(THREAD_POOL.lock())
+    pub fn lock(threads: Option<NonZero<usize>>) -> Self {
+        Self(lock_pool(threads.map(to_request)), PhantomData)
     }
 
     /// Try to acquire exclusive access to the ddss solver without blocking
     ///
-    /// Returns `None` if the solver is currently in use.
+    /// `threads` behaves as in [`Solver::lock`]. Returns `None` if the
+    /// solver is currently in use by another thread; in that case nothing
+    /// happens — in particular, the pool is not configured.
+    ///
+    /// # Panics
+    ///
+    /// Panics like [`Solver::lock`] if the lock is acquired and `threads`
+    /// conflicts with the existing pool configuration.
     #[must_use]
-    pub fn try_lock() -> Option<Self> {
-        THREAD_POOL.try_lock().map(Self)
+    pub fn try_lock(threads: Option<NonZero<usize>>) -> Option<Self> {
+        let guard = THREAD_POOL.try_lock()?;
+        apply_max_threads(&guard, threads.map(to_request));
+        Some(Self(guard, PhantomData))
     }
 
     /// Solve a single deal with [`sys::CalcDDtable`]
@@ -187,7 +320,7 @@ impl Solver {
     /// // Each player holds a 13-card straight flush in one suit.
     /// let deal: FullDeal = "N:AKQJT98765432... .AKQJT98765432.. \
     ///                       ..AKQJT98765432. ...AKQJT98765432".parse()?;
-    /// let solver = Solver::lock();
+    /// let solver = Solver::lock(None);
     /// let tricks = solver.solve_deal(deal);
     /// // North holds all the spades, so North or South declaring spades
     /// // draws trumps and takes every trick.
@@ -409,10 +542,40 @@ impl Solver {
 /// from any thread, including one that already holds a [`Solver`].
 #[must_use]
 pub fn system_info() -> SystemInfo {
-    let _guard = THREAD_POOL.lock();
+    let _guard = lock_pool(None);
     let mut inner = MaybeUninit::uninit();
     // SAFETY: `GetDDSInfo` writes a fully-initialized DDSInfo into the pointer.
     unsafe { sys::GetDDSInfo(inner.as_mut_ptr()) };
     // SAFETY: `inner` was just initialized by `GetDDSInfo`.
     SystemInfo(unsafe { inner.assume_init() })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{UNINIT, thread_target};
+
+    #[test]
+    fn thread_target_configures_once() {
+        assert_eq!(thread_target(None, UNINIT), Some(0));
+        assert_eq!(thread_target(Some(6), UNINIT), Some(6));
+    }
+
+    #[test]
+    fn thread_target_accepts_matching_or_indifferent_requests() {
+        assert_eq!(thread_target(None, 0), None);
+        assert_eq!(thread_target(None, 6), None);
+        assert_eq!(thread_target(Some(6), 6), None);
+    }
+
+    #[test]
+    #[should_panic(expected = "already configured")]
+    fn thread_target_panics_on_conflicting_cap() {
+        let _ = thread_target(Some(2), 6);
+    }
+
+    #[test]
+    #[should_panic(expected = "already configured")]
+    fn thread_target_panics_on_cap_after_auto() {
+        let _ = thread_target(Some(6), 0);
+    }
 }

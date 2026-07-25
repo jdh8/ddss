@@ -1,5 +1,65 @@
 # Changelog
 
+## [0.2.0] - 2026-07-25
+
+### Changed
+
+- **Breaking:** `Solver::lock` and `Solver::try_lock` now take
+  `threads: Option<NonZero<usize>>`, the maximum size of ddss's global
+  thread pool. The pool is configured exactly once per process, by the
+  first entry point that touches ddss: `Some(n)` caps the pool (ddss
+  clamps the effective size to the detected core count; observe it via
+  `system_info().num_threads()`), and `None` expresses no preference
+  (auto-detect all cores if it comes first, keep the existing
+  configuration otherwise — `calculate_par`, `calculate_pars`, and
+  `system_info` behave like `None`). A later lock requesting a
+  *different* cap panics (requests are compared by requested value;
+  repeating the same value is free), and a failed `try_lock`
+  configures nothing. Motivation: capping at the E-core count (e.g. 6
+  of 10 on Apple silicon) so a QoS-background process stops
+  oversubscribing the cores the OS grants — capping is not pinning, so
+  combine it with `taskpolicy -b` or a background QoS class to
+  actually land on E-cores. Migration for 0.1.x code is mechanical and
+  behavior-preserving (it could never cap): `lock()` → `lock(None)`,
+  `try_lock()` → `try_lock(None)`.
+
+  Configure-once (rather than resize-on-demand) is forced by the
+  vendored C++: `System::GetHardware` reads free memory through
+  `popen` but closes the stream with `fclose` instead of `pclose`,
+  which is undefined behavior for `popen` streams. In practice on
+  macOS every `SetResources` call after the first reads 0 free
+  kilobytes, computes a 0-thread configuration that `RegisterParams`
+  rejects (leaving the stale pool and thread count in place), and
+  clears the per-thread memory — the next solve then terminates the
+  whole process from `Memory::GetPtr`. Verified against the sources
+  vendored in ddss-sys 0.1.2; resizing can be revisited if a fixed
+  ddss ships.
+- Pool initialization moved out of the `LazyLock` closure: `THREAD_POOL`
+  is now a plain `const`-constructed `ReentrantMutex`, and
+  `SetMaxThreads` runs under the lock on first use of any entry point.
+  Observable nuance: a *failed* `try_lock` no longer forces pool
+  initialization.
+
+### Fixed
+
+- Soundness: `Solver` is no longer `Sync`. `ReentrantMutexGuard<'static, ()>`
+  is `Sync`, so 0.1.x safe code could share `&Solver` into
+  `std::thread::scope` and call solve methods from two threads at once
+  — concurrent entry into ddss's non-reentrant C API (undefined
+  behavior). A `PhantomData<*mut ()>` field now pins `Solver` as
+  `!Send + !Sync`. Removing an auto trait from a public type is itself
+  breaking; 0.2.0 covers both this and the signature change above, and
+  only code that was already UB-capable is affected.
+
+### Added
+
+- Unit tests for the configure-once decision logic (`thread_target`,
+  including its conflict panics) and the `tests/thread_cap.rs`
+  integration test, which lives in its own test binary so it reliably
+  owns the process's first lock: cap at 2, same-value re-lock, `None`
+  keeps the cap, and a conflicting cap panics without corrupting the
+  pool. Plus `compile_fail` doctests pinning `Solver: !Send + !Sync`.
+
 ## [0.1.3] - 2026-06-24
 
 ### Added
@@ -154,3 +214,4 @@ Initial release. High-level wrapper around [`ddss-sys`](https://crates.io/crates
 [0.1.1]: https://github.com/jdh8/ddss/releases/tag/0.1.1
 [0.1.2]: https://github.com/jdh8/ddss/releases/tag/0.1.2
 [0.1.3]: https://github.com/jdh8/ddss/releases/tag/0.1.3
+[0.2.0]: https://github.com/jdh8/ddss/releases/tag/0.2.0

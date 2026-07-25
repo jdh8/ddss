@@ -8,7 +8,7 @@ use rand::rngs::SmallRng;
 
 fn bench_solve_deal_single(c: &mut Criterion) {
     let mut rng = SmallRng::seed_from_u64(0);
-    let solver = Solver::lock();
+    let solver = Solver::lock(None);
     c.bench_function("solve_deal_single", |b| {
         b.iter_batched(
             || full_deal(&mut rng),
@@ -20,7 +20,7 @@ fn bench_solve_deal_single(c: &mut Criterion) {
 
 fn bench_solve_deals_batch(c: &mut Criterion) {
     let mut rng = SmallRng::seed_from_u64(1);
-    let solver = Solver::lock();
+    let solver = Solver::lock(None);
     let mut group = c.benchmark_group("solve_deals_batch");
     // 10 samples (criterion's floor) + 30 s budget covers 10 iters at N=200
     // (~22 s) without tripping criterion's "took longer than configured" warning.

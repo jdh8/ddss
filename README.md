@@ -21,7 +21,7 @@ use ddss::Solver;
 # fn main() -> Result<(), Box<dyn core::error::Error>> {
 let deal: FullDeal = "N:AKQJT98765432... .AKQJT98765432.. \
                       ..AKQJT98765432. ...AKQJT98765432".parse()?;
-let solver = Solver::lock();
+let solver = Solver::lock(None);
 let tricks = solver.solve_deal(deal);
 assert_eq!(u8::from(tricks[Strain::Spades].get(Seat::North)), 13);
 # Ok(())
@@ -31,14 +31,38 @@ assert_eq!(u8::from(tricks[Strain::Spades].get(Seat::North)), 13);
 ## Threading
 
 `Solver` is a guard, not an owned context. ddss exposes a global thread pool
-that is initialized once (via `SetMaxThreads(0)`) on first lock acquisition.
-Hold a `Solver` once for a batch of related calls to avoid repeated locking.
-Batch entry points (`solve_deals`, `solve_boards`) parallelize internally
-across that pool — there is no need for caller-side rayon.
+that is configured exactly once per process, on first use of any entry
+point: `Solver::lock(NonZero::new(n))` caps the pool at `n` threads (clamped
+to the detected core count), and `Solver::lock(None)` expresses no
+preference (auto-detect all cores if it comes first). The pool cannot be
+resized afterwards — the vendored ddss breaks on repeated `SetResources`
+calls (on macOS its hardware probe reads 0 free memory the second time and
+corrupts the per-thread memory) — so a later lock requesting a *different*
+cap panics instead. Hold a `Solver` once for a batch of related calls to
+avoid repeated locking. Batch entry points (`solve_deals`, `solve_boards`)
+parallelize internally across that pool — there is no need for caller-side
+rayon.
 
-Because `Solver` wraps a `parking_lot::MutexGuard<'static, ()>`, it is `!Send`:
-the lock must be released on the same OS thread that acquired it. Spawn one
-thread per solving job and acquire the lock inside that thread.
+Capping is useful on heterogeneous CPUs like Apple silicon, where confining a
+process to a subset of cores would otherwise oversubscribe them — e.g. a
+background process on a 10-core chip with 6 E-cores:
+
+```rust,no_run
+use core::num::NonZero;
+use ddss::Solver;
+
+// Make this the process's first ddss call so the pool is built capped at
+// the E-core count. Run under `taskpolicy -b` (or a background QoS class)
+// to actually steer the process onto E-cores — the cap only prevents
+// oversubscribing the cores the OS grants.
+let solver = Solver::lock(NonZero::new(6));
+```
+
+Because `Solver` wraps a `parking_lot::ReentrantMutexGuard`, it is `!Send`:
+the lock must be released on the same OS thread that acquired it. It is also
+`!Sync`, so safe code cannot share one `Solver` across threads and enter ddss
+concurrently. Spawn one thread per solving job and acquire the lock inside
+that thread.
 
 ## Relationship to dds-bridge
 

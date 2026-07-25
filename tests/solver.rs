@@ -4,41 +4,46 @@ use contract_bridge::{Builder, Card, Contract, Hand, Holding, Penalty, Rank, Sea
 use ddss::*;
 use semver::Version;
 
+/// Everyone holds a 13-card straight flush: North in spades, East in hearts,
+/// South in diamonds, West in clubs.
+const STRAIGHT_FLUSHES_DEAL: Builder = Builder::new()
+    .north(Hand::new(
+        Holding::ALL,
+        Holding::EMPTY,
+        Holding::EMPTY,
+        Holding::EMPTY,
+    ))
+    .east(Hand::new(
+        Holding::EMPTY,
+        Holding::ALL,
+        Holding::EMPTY,
+        Holding::EMPTY,
+    ))
+    .south(Hand::new(
+        Holding::EMPTY,
+        Holding::EMPTY,
+        Holding::ALL,
+        Holding::EMPTY,
+    ))
+    .west(Hand::new(
+        Holding::EMPTY,
+        Holding::EMPTY,
+        Holding::EMPTY,
+        Holding::ALL,
+    ));
+
+/// Double-dummy table of [`STRAIGHT_FLUSHES_DEAL`].
+const STRAIGHT_FLUSHES_TABLE: TrickCountTable = TrickCountTable([
+    TrickCountRow::new(13, 0, 13, 0),
+    TrickCountRow::new(0, 13, 0, 13),
+    TrickCountRow::new(13, 0, 13, 0),
+    TrickCountRow::new(0, 13, 0, 13),
+    TrickCountRow::new(0, 0, 0, 0),
+]);
+
 /// Everyone has a 13-card straight flush, and the par is 7SW=.
 #[test]
 fn solve_four_13_card_straight_flushes() -> Result<(), Builder> {
-    const DEAL: Builder = Builder::new()
-        .north(Hand::new(
-            Holding::ALL,
-            Holding::EMPTY,
-            Holding::EMPTY,
-            Holding::EMPTY,
-        ))
-        .east(Hand::new(
-            Holding::EMPTY,
-            Holding::ALL,
-            Holding::EMPTY,
-            Holding::EMPTY,
-        ))
-        .south(Hand::new(
-            Holding::EMPTY,
-            Holding::EMPTY,
-            Holding::ALL,
-            Holding::EMPTY,
-        ))
-        .west(Hand::new(
-            Holding::EMPTY,
-            Holding::EMPTY,
-            Holding::EMPTY,
-            Holding::ALL,
-        ));
-    const SOLUTION: TrickCountTable = TrickCountTable([
-        TrickCountRow::new(13, 0, 13, 0),
-        TrickCountRow::new(0, 13, 0, 13),
-        TrickCountRow::new(13, 0, 13, 0),
-        TrickCountRow::new(0, 13, 0, 13),
-        TrickCountRow::new(0, 0, 0, 0),
-    ]);
     const CONTRACT: Contract = Contract::new(7, Strain::Spades, Penalty::Undoubled);
     const CONTRACTS: [ParContract; 2] = [
         ParContract {
@@ -60,9 +65,12 @@ fn solve_four_13_card_straight_flushes() -> Result<(), Builder> {
         score: 2210,
         contracts: CONTRACTS.to_vec(),
     };
-    assert_eq!(Solver::lock().solve_deal(DEAL.build_full()?), SOLUTION);
+    assert_eq!(
+        Solver::lock(None).solve_deal(STRAIGHT_FLUSHES_DEAL.build_full()?),
+        STRAIGHT_FLUSHES_TABLE
+    );
 
-    let pars = calculate_pars(SOLUTION, Vulnerability::all());
+    let pars = calculate_pars(STRAIGHT_FLUSHES_TABLE, Vulnerability::all());
     assert!(pars[0].equivalent(&ns));
     assert!(pars[1].equivalent(&ew));
     Ok(())
@@ -88,7 +96,7 @@ fn solve_par_5_tricks() -> Result<(), Builder> {
         score: 0,
         contracts: Vec::new(),
     };
-    assert_eq!(Solver::lock().solve_deal(DEAL.build_full()?), SOLUTION);
+    assert_eq!(Solver::lock(None).solve_deal(DEAL.build_full()?), SOLUTION);
 
     let pars = calculate_pars(SOLUTION, Vulnerability::all());
     assert!(pars[0].equivalent(&PAR));
@@ -115,7 +123,7 @@ fn solve_everyone_makes_1nt() -> Result<(), Builder> {
     const NT: TrickCountRow = TrickCountRow::new(7, 7, 7, 7);
     const SOLUTION: TrickCountTable = TrickCountTable([SUIT, SUIT, SUIT, SUIT, NT]);
     const CONTRACT: Contract = Contract::new(1, Strain::Notrump, Penalty::Undoubled);
-    assert_eq!(Solver::lock().solve_deal(DEAL.build_full()?), SOLUTION);
+    assert_eq!(Solver::lock(None).solve_deal(DEAL.build_full()?), SOLUTION);
 
     let ns = Par {
         score: 90,
@@ -166,7 +174,7 @@ fn solve_board_score_matches_dd_table() -> anyhow::Result<()> {
         .south(Hand::new(K976, T8, A54, QJ32))
         .west(Hand::new(QJ32, K976, T8, A54));
 
-    let solver = Solver::lock();
+    let solver = Solver::lock(None);
     let full = DEAL
         .build_full()
         .map_err(|_| anyhow::anyhow!("DEAL is not a full deal"))?;
@@ -199,7 +207,7 @@ fn solve_boards_matches_solve_board() -> anyhow::Result<()> {
         .south(Hand::new(K976, T8, A54, QJ32))
         .west(Hand::new(QJ32, K976, T8, A54));
 
-    let solver = Solver::lock();
+    let solver = Solver::lock(None);
     let partial = DEAL
         .build_partial()
         .map_err(|_| anyhow::anyhow!("DEAL is not a valid partial deal"))?;
@@ -302,7 +310,7 @@ fn solve_deals_batch_matches_sequential() -> Result<(), Builder> {
         .iter()
         .map(|b| b.build_full())
         .collect::<Result<_, _>>()?;
-    let solver = Solver::lock();
+    let solver = Solver::lock(None);
     let batch = solver.solve_deals(&deals, NonEmptyStrainFlags::ALL);
     let sequential: Vec<_> = deals.iter().map(|&d| solver.solve_deal(d)).collect();
     core::mem::drop(solver);
@@ -345,7 +353,7 @@ fn solve_deals_parallel_matches_sequential() {
     }
 
     let deals = random_deals(16, 0x000C_0FFE_ED05);
-    let solver = Solver::lock();
+    let solver = Solver::lock(None);
     let batch = solver.solve_deals(&deals, NonEmptyStrainFlags::ALL);
     let sequential: Vec<_> = deals.iter().map(|&d| solver.solve_deal(d)).collect();
     core::mem::drop(solver);
@@ -378,7 +386,7 @@ fn batch_solvers_fit_on_one_megabyte_stack() {
                 .build_partial()
                 .map_err(|_| anyhow::anyhow!("DEAL is not a valid partial deal"))?;
             let board = Board::try_new(partial, CurrentTrick::new(Strain::Notrump, Seat::North))?;
-            let solver = Solver::lock();
+            let solver = Solver::lock(None);
             let _ = solver.solve_deals(&[full], NonEmptyStrainFlags::ALL);
             let _ = solver.solve_boards(&[Objective {
                 board,
@@ -410,7 +418,7 @@ fn analyse_play_empty_trace_complements_solve_board() -> anyhow::Result<()> {
         .map_err(|_| anyhow::anyhow!("DEAL is not a valid partial deal"))?;
     let board = Board::try_new(partial, CurrentTrick::new(Strain::Notrump, Seat::North))?;
 
-    let solver = Solver::lock();
+    let solver = Solver::lock(None);
     let found = solver.solve_board(&Objective {
         board: board.clone(),
         target: Target::Any(None),
@@ -446,7 +454,7 @@ fn analyse_play_optimal_card_preserves_dd_value() -> anyhow::Result<()> {
         .build_partial()
         .map_err(|_| anyhow::anyhow!("DEAL is not a valid partial deal"))?;
     let board = Board::try_new(partial, CurrentTrick::new(Strain::Notrump, Seat::North))?;
-    let solver = Solver::lock();
+    let solver = Solver::lock(None);
     let found = solver.solve_board(&Objective {
         board: board.clone(),
         target: Target::Any(None),
@@ -500,7 +508,7 @@ fn analyse_play_straight_flush_declarer_takes_zero() -> anyhow::Result<()> {
         .build_partial()
         .map_err(|_| anyhow::anyhow!("DEAL is not a valid partial deal"))?;
     let board = Board::try_new(partial, CurrentTrick::new(Strain::Notrump, Seat::North))?;
-    let analysis = Solver::lock().analyse_play(&PlayTrace { board, cards });
+    let analysis = Solver::lock(None).analyse_play(&PlayTrace { board, cards });
     assert_eq!(analysis.tricks.len(), 2);
     assert!(analysis.tricks.iter().all(|&t| u8::from(t) == 0));
     Ok(())
@@ -546,7 +554,7 @@ fn system_info_compiler_is_known() {
 fn system_info_threading_is_stl() {
     // Force the global pool to initialize so `noOfThreads`/`threadSizes` are
     // populated when other tests query them in parallel.
-    let _guard = Solver::lock();
+    let _guard = Solver::lock(None);
     assert_eq!(system_info().threading(), Threading::STL);
 }
 
@@ -559,25 +567,25 @@ fn system_info_num_cores_is_positive() {
 fn system_info_num_threads_is_positive() {
     // Hold the global lock so the ddss thread pool is initialized before
     // we query thread-derived fields; see `system_info_threading_is_stl`.
-    let _guard = Solver::lock();
+    let _guard = Solver::lock(None);
     assert!(system_info().num_threads() > 0);
 }
 
 #[test]
 fn system_info_thread_sizes_is_nonempty() {
-    let _guard = Solver::lock();
+    let _guard = Solver::lock(None);
     assert!(!system_info().thread_sizes().is_empty());
 }
 
 #[test]
 fn system_info_system_string_is_nonempty() {
-    let _guard = Solver::lock();
+    let _guard = Solver::lock(None);
     assert!(!system_info().system_string().is_empty());
 }
 
 #[test]
 fn system_info_display_matches_system_string() {
-    let _guard = Solver::lock();
+    let _guard = Solver::lock(None);
     let info = system_info();
     assert_eq!(info.to_string(), info.system_string());
 }
@@ -842,7 +850,7 @@ fn vulnerability_display_fromstr_roundtrip() {
 fn solve_deals_crosses_chunk_boundary() {
     const N: usize = ddss_sys::MAXNOOFBOARDS as usize / 5 + 10;
     let deals: Vec<_> = (0..N).map(|_| full_deal(&mut rand::rng())).collect();
-    let solver = Solver::lock();
+    let solver = Solver::lock(None);
     let array: Vec<_> = deals.iter().map(|&x| solver.solve_deal(x)).collect();
     let vec = solver.solve_deals(&deals, NonEmptyStrainFlags::ALL);
     core::mem::drop(solver);
