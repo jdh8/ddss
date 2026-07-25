@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782232976842,
+  "lastUpdate": 1784959354514,
   "repoUrl": "https://github.com/jdh8/ddss",
   "entries": {
     "Benchmark": [
@@ -293,6 +293,48 @@ window.BENCHMARK_DATA = {
             "name": "solve_deals_batch/200",
             "value": 17034928808,
             "range": "± 60877500",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "chen.pang.he@jdh8.org",
+            "name": "Chen-Pang He",
+            "username": "jdh8"
+          },
+          "committer": {
+            "email": "chen.pang.he@jdh8.org",
+            "name": "Chen-Pang He",
+            "username": "jdh8"
+          },
+          "distinct": true,
+          "id": "338e5c3c612c7708229da95dcaddc867cba40e3a",
+          "message": "Make Solver::lock/try_lock take a thread cap; fix Sync soundness hole\n\n- lock and try_lock now take threads: Option<NonZero<usize>>. The\n  first ddss call in the process fixes the pool size: Some(n) caps it\n  (clamped to detected cores), None auto-sizes. Later locks may repeat\n  the request or pass None, but a different cap panics: the vendored\n  ddss cannot resize at runtime — its GetHardware closes popen with\n  fclose, so on macOS every SetResources after the first reads 0 free\n  kB, clears the per-thread memory, and the next solve aborts the\n  process. Migration: lock() -> lock(None). To keep a QoS-background\n  process on a 10-core/6-E-core Mac from oversubscribing, make\n  lock(NonZero::new(6)) its first ddss call\n- Solver is now !Send + !Sync via PhantomData<*mut ()>: the reentrant\n  guard leaked Sync, letting safe code enter ddss from two threads\n- THREAD_POOL is a const ReentrantMutex; SetMaxThreads now runs under\n  the lock on first use of any entry point instead of inside LazyLock\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>",
+          "timestamp": "2026-07-25T13:25:44+08:00",
+          "tree_id": "66287e122e1e4d7a4835303aeff15928dfaa4dfc",
+          "url": "https://github.com/jdh8/ddss/commit/338e5c3c612c7708229da95dcaddc867cba40e3a"
+        },
+        "date": 1784959353559,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "solve_deal_single",
+            "value": 73793453,
+            "range": "± 178986040",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "solve_deals_batch/32",
+            "value": 2444666727,
+            "range": "± 7973648",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "solve_deals_batch/200",
+            "value": 16930063645,
+            "range": "± 104610420",
             "unit": "ns/iter"
           }
         ]
