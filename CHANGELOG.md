@@ -6,34 +6,38 @@
 
 - **Breaking:** `Solver::lock` and `Solver::try_lock` now take
   `threads: Option<NonZero<usize>>`, the maximum size of ddss's global
-  thread pool. The pool is configured exactly once per process, by the
-  first entry point that touches ddss: `Some(n)` caps the pool (ddss
-  clamps the effective size to the detected core count; observe it via
-  `system_info().num_threads()`), and `None` expresses no preference
-  (auto-detect all cores if it comes first, keep the existing
-  configuration otherwise — `calculate_par`, `calculate_pars`, and
-  `system_info` behave like `None`). A later lock requesting a
-  *different* cap panics (requests are compared by requested value;
-  repeating the same value is free), and a failed `try_lock`
-  configures nothing. Motivation: capping at the E-core count (e.g. 6
-  of 10 on Apple silicon) so a QoS-background process stops
-  oversubscribing the cores the OS grants — capping is not pinning, so
-  combine it with `taskpolicy -b` or a background QoS class to
-  actually land on E-cores. Migration for 0.1.x code is mechanical and
-  behavior-preserving (it could never cap): `lock()` → `lock(None)`,
-  `try_lock()` → `try_lock(None)`.
-
-  Configure-once (rather than resize-on-demand) is forced by the
-  vendored C++: `System::GetHardware` reads free memory through
-  `popen` but closes the stream with `fclose` instead of `pclose`,
-  which is undefined behavior for `popen` streams. In practice on
-  macOS every `SetResources` call after the first reads 0 free
-  kilobytes, computes a 0-thread configuration that `RegisterParams`
-  rejects (leaving the stale pool and thread count in place), and
-  clears the per-thread memory — the next solve then terminates the
-  whole process from `Memory::GetPtr`. Verified against the sources
-  vendored in ddss-sys 0.1.2; resizing can be revisited if a fixed
-  ddss ships.
+  thread pool. `Some(n)` caps the pool (ddss clamps the effective size
+  to the detected core count; observe it via
+  `system_info().num_threads()`), and `None` means no maximum
+  (auto-detect all cores — enforced, so it also uncaps a capped pool).
+  The setting is process-global and the last lock wins: a lock
+  requesting a value *different* from the last applied one tears down
+  and rebuilds the pool and its per-thread transposition tables, so
+  prefer one consistent value per process. Repeating the applied value
+  is free (requests are compared by requested value, not effective
+  size), `calculate_par`, `calculate_pars`, and `system_info` never
+  alter the setting (they only auto-size a still-unconfigured pool),
+  and a failed `try_lock` configures nothing. One ddss quirk:
+  shrinking to exactly 1 thread parks the old pool threads instead of
+  joining them; the next larger request reclaims them. Motivation:
+  capping at the E-core count (e.g. 6 of 10 on Apple silicon) so a
+  QoS-background process stops oversubscribing the cores the OS grants
+  — capping is not pinning, so combine it with `taskpolicy -b` or a
+  background QoS class to actually land on E-cores. Migration for
+  0.1.x code is mechanical and behavior-preserving (it could never
+  cap): `lock()` → `lock(None)`, `try_lock()` → `try_lock(None)`.
+- `ddss-sys` requirement raised to 0.1.3. Runtime resizing is only
+  safe from that version on: earlier vendored sources closed the
+  `popen` stream in `System::GetHardware` with `fclose` (undefined
+  behavior for `popen` streams), so on macOS every `SetResources`
+  call after the first read 0 free kilobytes, computed a 0-thread
+  configuration that `RegisterParams` rejected (leaving the stale
+  pool and thread count in place), and cleared the per-thread memory
+  — the next solve then terminated the whole process from
+  `Memory::GetPtr`. ddss-sys 0.1.3 vendors the fixes proposed
+  upstream in [BSalita/ddss#1](https://github.com/BSalita/ddss/pull/1)
+  (`pclose` + a `SetResources` guard that preserves the previous
+  configuration when the new one is infeasible).
 - Pool initialization moved out of the `LazyLock` closure: `THREAD_POOL`
   is now a plain `const`-constructed `ReentrantMutex`, and
   `SetMaxThreads` runs under the lock on first use of any entry point.
@@ -53,12 +57,13 @@
 
 ### Added
 
-- Unit tests for the configure-once decision logic (`thread_target`,
-  including its conflict panics) and the `tests/thread_cap.rs`
-  integration test, which lives in its own test binary so it reliably
-  owns the process's first lock: cap at 2, same-value re-lock, `None`
-  keeps the cap, and a conflicting cap panics without corrupting the
-  pool. Plus `compile_fail` doctests pinning `Solver: !Send + !Sync`.
+- Unit tests for the resize decision logic (`thread_target`) and the
+  `tests/thread_cap.rs` integration test, which lives in its own test
+  binary so no other test races its pool-size assertions: cap at 2,
+  same-value re-lock skips the rebuild, resize to 3, shrink to 1
+  (the parked-pool quirk path), and `None` restores auto-detect —
+  solving a fixture deal at every step. Plus `compile_fail` doctests
+  pinning `Solver: !Send + !Sync`.
 
 ## [0.1.3] - 2026-06-24
 

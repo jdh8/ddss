@@ -20,7 +20,7 @@ serde = ["dep:serde", "dep:serde_with", "arrayvec/serde", "bitflags/serde", "con
 arrayvec = "0.7"
 bitflags = "2"
 contract-bridge = "0.1"
-ddss-sys = "0.1.1"
+ddss-sys = "0.1.3"
 parking_lot = "0.12"
 semver = "1"
 serde = { version = "1", features = ["derive"], optional = true }

@@ -30,18 +30,19 @@ assert_eq!(u8::from(tricks[Strain::Spades].get(Seat::North)), 13);
 
 ## Threading
 
-`Solver` is a guard, not an owned context. ddss exposes a global thread pool
-that is configured exactly once per process, on first use of any entry
-point: `Solver::lock(NonZero::new(n))` caps the pool at `n` threads (clamped
-to the detected core count), and `Solver::lock(None)` expresses no
-preference (auto-detect all cores if it comes first). The pool cannot be
-resized afterwards — the vendored ddss breaks on repeated `SetResources`
-calls (on macOS its hardware probe reads 0 free memory the second time and
-corrupts the per-thread memory) — so a later lock requesting a *different*
-cap panics instead. Hold a `Solver` once for a batch of related calls to
-avoid repeated locking. Batch entry points (`solve_deals`, `solve_boards`)
-parallelize internally across that pool — there is no need for caller-side
-rayon.
+`Solver` is a guard, not an owned context. ddss exposes a single global
+thread pool, and every lock states its desired size:
+`Solver::lock(NonZero::new(n))` caps the pool at `n` threads (clamped to
+the detected core count), and `Solver::lock(None)` means no maximum
+(auto-detect all cores — enforced, so it also uncaps a capped pool). The
+setting is process-global and the last lock wins: a lock requesting a
+*different* value than the last applied one tears down and rebuilds the
+pool and its per-thread transposition tables, so prefer one consistent
+value per process; repeating the same value is free, and `calculate_par`,
+`calculate_pars`, and `system_info` never alter the setting. Hold a
+`Solver` once for a batch of related calls to avoid repeated locking.
+Batch entry points (`solve_deals`, `solve_boards`) parallelize internally
+across that pool — there is no need for caller-side rayon.
 
 Capping is useful on heterogeneous CPUs like Apple silicon, where confining a
 process to a subset of cores would otherwise oversubscribe them — e.g. a
@@ -51,10 +52,11 @@ background process on a 10-core chip with 6 E-cores:
 use core::num::NonZero;
 use ddss::Solver;
 
-// Make this the process's first ddss call so the pool is built capped at
-// the E-core count. Run under `taskpolicy -b` (or a background QoS class)
-// to actually steer the process onto E-cores — the cap only prevents
-// oversubscribing the cores the OS grants.
+// Cap the pool at the E-core count; making this the process's first ddss
+// call builds the pool at that size directly instead of resizing it. Run
+// under `taskpolicy -b` (or a background QoS class) to actually steer the
+// process onto E-cores — the cap only prevents oversubscribing the cores
+// the OS grants.
 let solver = Solver::lock(NonZero::new(6));
 ```
 

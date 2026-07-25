@@ -141,39 +141,26 @@ static THREAD_POOL: ReentrantMutex<()> = ReentrantMutex::new(());
 /// Sentinel for [`APPLIED_THREADS`]: no `SetMaxThreads` call has happened yet.
 const UNINIT: i32 = -1;
 
-/// Thread count requested from ddss, configured at most once per process:
-/// [`UNINIT`], 0 for auto-detect, or a positive cap. Written and read only
-/// while holding [`THREAD_POOL`], whose release/acquire ordering provides
-/// the happens-before — `Relaxed` suffices.
+/// Thread count last requested from ddss: [`UNINIT`] before the first
+/// `SetMaxThreads` call, then 0 for auto-detect or a positive cap. Written
+/// and read only while holding [`THREAD_POOL`], whose release/acquire
+/// ordering provides the happens-before — `Relaxed` suffices.
 static APPLIED_THREADS: AtomicI32 = AtomicI32::new(UNINIT);
 
 /// Decides what to pass to `SetMaxThreads`, if anything.
 ///
-/// `want` is `Some(n)` (n > 0) to request a thread cap or `None` when the
-/// caller has no preference. The pool is configured at most once per
-/// process: the first call picks the size (0 = ddss auto-detect) and later
-/// calls may only repeat it. Reconfiguring is not an option because the
-/// vendored ddss breaks on a second `SetResources`: on macOS,
-/// `System::GetHardware` reads free memory with `popen` but closes the
-/// stream with `fclose` instead of `pclose`, so every later call sees 0
-/// free kilobytes, computes a 0-thread configuration that `RegisterParams`
-/// rejects (keeping the stale pool and thread count), and empties the
-/// per-thread memory — the next solve then aborts the process from
-/// `Memory::GetPtr`.
-///
-/// # Panics
-///
-/// Panics when `want` requests a cap that differs from the applied
-/// configuration.
-fn thread_target(want: Option<i32>, applied: i32) -> Option<i32> {
+/// `want` is `Some(n)` (n ≥ 0, with 0 meaning ddss auto-detect) when the
+/// caller states a desired pool size, or `None` when it has no preference
+/// — the internal entry points ([`calculate_par`], [`calculate_pars`],
+/// [`system_info`]) only initialize a still-unconfigured pool and never
+/// alter an existing configuration. Repeating the already-applied request
+/// is skipped: reconfiguring tears down and rebuilds the whole pool and
+/// its per-thread transposition tables. Requests are compared by requested
+/// value, not by the effective pool size ddss clamps them to.
+const fn thread_target(want: Option<i32>, applied: i32) -> Option<i32> {
     match want {
+        Some(n) if n != applied => Some(n),
         None if applied == UNINIT => Some(0),
-        Some(n) if applied == UNINIT => Some(n),
-        Some(n) if n != applied => panic!(
-            "ddss thread pool is already configured with max_threads = {applied} \
-             (0 means no maximum) and cannot be resized at runtime; pass the \
-             desired cap ({n}) to the process's first ddss call instead"
-        ),
         _ => None,
     }
 }
@@ -183,9 +170,11 @@ fn thread_target(want: Option<i32>, applied: i32) -> Option<i32> {
 fn apply_max_threads(_guard: &ReentrantMutexGuard<'static, ()>, want: Option<i32>) {
     if let Some(target) = thread_target(want, APPLIED_THREADS.load(Ordering::Relaxed)) {
         // SAFETY: the witness guard serializes this call against every other
-        // ddss entry point in this crate, and `thread_target` guarantees it
-        // is the process's only `SetMaxThreads` call — a serialized first
-        // call safely builds the pool.
+        // ddss entry point in this crate, and a serialized `SetMaxThreads`
+        // is safe to repeat: `System::InitPool` joins the old pool before
+        // spawning the new one, and ddss-sys ≥ 0.1.3 fixes the hardware
+        // probe (`pclose`) and guards `SetResources` against freeing the
+        // pool on an infeasible configuration.
         unsafe { sys::SetMaxThreads(target) };
         APPLIED_THREADS.store(target, Ordering::Relaxed);
     }
@@ -199,11 +188,12 @@ fn lock_pool(want: Option<i32>) -> ReentrantMutexGuard<'static, ()> {
     guard
 }
 
-/// Maps a requested cap to ddss's `SetMaxThreads` argument. ddss clamps the
-/// value to the detected core count, so saturating oversized requests at
-/// `i32::MAX` is exact.
-fn to_request(threads: NonZero<usize>) -> i32 {
-    i32::try_from(threads.get()).unwrap_or(i32::MAX)
+/// Maps a requested cap to ddss's `SetMaxThreads` argument: `None` is 0,
+/// ddss's own "auto-detect all cores" convention. ddss clamps the value to
+/// the detected core count, so saturating oversized requests at `i32::MAX`
+/// is exact.
+fn to_request(threads: Option<NonZero<usize>>) -> i32 {
+    threads.map_or(0, |n| i32::try_from(n.get()).unwrap_or(i32::MAX))
 }
 
 /// Exclusive handle to the ddss solver
@@ -240,36 +230,32 @@ pub struct Solver(
 impl Solver {
     /// Acquire exclusive access to the ddss solver, blocking until available
     ///
-    /// `threads` is the maximum size of ddss's global thread pool, which is
-    /// configured **once per process** by whichever entry point touches
-    /// ddss first:
+    /// `threads` is the maximum size of ddss's global thread pool:
     ///
     /// - `Some(n)` caps the pool at `n` threads. ddss clamps the effective
     ///   size to the detected core count (and may shave off more under
     ///   extreme memory pressure); observe the result via
     ///   [`SystemInfo::num_threads`].
-    /// - `None` expresses no preference: auto-detect all cores if this is
-    ///   the first ddss call, otherwise keep the current configuration.
+    /// - `None` means no maximum: auto-detect all cores. This is enforced
+    ///   like any other request, so `lock(None)` after a capped lock uncaps
+    ///   the pool.
     ///
-    /// To cap the pool, make `lock(Some(n))` the process's first ddss call
-    /// — before [`system_info`], [`calculate_par`], or [`calculate_pars`],
-    /// which auto-size the pool if they come first (like `None`, they never
-    /// change an existing configuration). The setting then holds for the
-    /// process lifetime: the vendored ddss cannot safely resize its pool at
-    /// runtime, so a later lock requesting a **different** cap panics.
-    /// Requests are compared by requested value (repeating the same value
-    /// is free), not by effective pool size.
+    /// The setting is process-global and the last lock wins: whenever a
+    /// lock requests a different value than the one last applied, the pool
+    /// is torn down and rebuilt at the new size together with its
+    /// per-thread transposition tables — correct, but expensive, so prefer
+    /// one consistent value per process. Repeating the applied value is
+    /// free (requests are compared by requested value, not by effective
+    /// pool size), and [`system_info`], [`calculate_par`], and
+    /// [`calculate_pars`] never alter the setting (they only auto-size a
+    /// pool that nothing has configured yet). One ddss quirk: shrinking to
+    /// exactly one thread parks the existing pool threads instead of
+    /// joining them; they are reclaimed by the next larger request.
     ///
     /// Capping is not pinning: to keep a macOS process on E-cores, combine a
     /// cap with OS scheduling policy such as `taskpolicy -b` or a background
     /// QoS class. The cap only prevents oversubscribing the cores the OS
     /// grants.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the pool is already configured and `threads` requests a
-    /// different value than the pool was configured with. `None` never
-    /// panics.
     ///
     /// # Examples
     ///
@@ -277,30 +263,24 @@ impl Solver {
     /// use core::num::NonZero;
     /// use ddss::Solver;
     ///
-    /// // The first ddss call in the process fixes the pool size.
     /// let _solver = Solver::lock(NonZero::new(2));
     /// let info = ddss::system_info();
     /// assert_eq!(info.num_threads(), 2.min(info.num_cores()));
     /// ```
     #[must_use]
     pub fn lock(threads: Option<NonZero<usize>>) -> Self {
-        Self(lock_pool(threads.map(to_request)), PhantomData)
+        Self(lock_pool(Some(to_request(threads))), PhantomData)
     }
 
     /// Try to acquire exclusive access to the ddss solver without blocking
     ///
     /// `threads` behaves as in [`Solver::lock`]. Returns `None` if the
     /// solver is currently in use by another thread; in that case nothing
-    /// happens — in particular, the pool is not configured.
-    ///
-    /// # Panics
-    ///
-    /// Panics like [`Solver::lock`] if the lock is acquired and `threads`
-    /// conflicts with the existing pool configuration.
+    /// happens — in particular, the thread request is not applied.
     #[must_use]
     pub fn try_lock(threads: Option<NonZero<usize>>) -> Option<Self> {
         let guard = THREAD_POOL.try_lock()?;
-        apply_max_threads(&guard, threads.map(to_request));
+        apply_max_threads(&guard, Some(to_request(threads)));
         Some(Self(guard, PhantomData))
     }
 
@@ -555,27 +535,25 @@ mod tests {
     use super::{UNINIT, thread_target};
 
     #[test]
-    fn thread_target_configures_once() {
+    fn thread_target_applies_the_first_request() {
         assert_eq!(thread_target(None, UNINIT), Some(0));
+        assert_eq!(thread_target(Some(0), UNINIT), Some(0));
         assert_eq!(thread_target(Some(6), UNINIT), Some(6));
     }
 
     #[test]
-    fn thread_target_accepts_matching_or_indifferent_requests() {
+    fn thread_target_skips_matching_or_indifferent_requests() {
         assert_eq!(thread_target(None, 0), None);
         assert_eq!(thread_target(None, 6), None);
+        assert_eq!(thread_target(Some(0), 0), None);
         assert_eq!(thread_target(Some(6), 6), None);
     }
 
     #[test]
-    #[should_panic(expected = "already configured")]
-    fn thread_target_panics_on_conflicting_cap() {
-        let _ = thread_target(Some(2), 6);
-    }
-
-    #[test]
-    #[should_panic(expected = "already configured")]
-    fn thread_target_panics_on_cap_after_auto() {
-        let _ = thread_target(Some(6), 0);
+    fn thread_target_resizes_on_differing_requests() {
+        assert_eq!(thread_target(Some(2), 6), Some(2));
+        assert_eq!(thread_target(Some(6), 2), Some(6));
+        assert_eq!(thread_target(Some(6), 0), Some(6));
+        assert_eq!(thread_target(Some(0), 6), Some(0));
     }
 }
